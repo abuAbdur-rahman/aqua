@@ -1,6 +1,6 @@
 # Aqua — Backend Plan (Rust Daemon / Axum)
 
-Repo slice: `daemon/` — the WSL agent's working directory, with its own `daemon/AGENTS.md`. A single Rust binary running **inside WSL Ubuntu**, bound to `127.0.0.1`. It's the only thing that touches the real filesystem, process table, and shell — Aqua's Tauri app has no direct OS access at all, it only calls this API.
+Repo slice: `daemon/` – the WSL agent's working directory, with its own `daemon/AGENTS.md`. A single Rust binary running **inside WSL Ubuntu**, bound to `127.0.0.1`. It's the only thing that touches the real filesystem, process table, and shell – Aqua's Tauri app has no direct OS access at all, it only calls this API.
 
 **Companion docs:**
 - `aqua-app-plan.md` — owns the Tauri/React app that consumes this API
@@ -25,7 +25,7 @@ Real OS-level primitives (pty allocation, `sysinfo`, `notify` filesystem watchin
 
 ## 3. Architecture (this daemon's slice)
 
-Single binary, `axum` router, bound to `127.0.0.1:61234`. Two consumers, both external to this repo slice:
+Single binary, `axum` router, bound to `127.0.0.1:61234`. Port `61234` is Aqua's fixed loopback daemon port; keep it centralized in the implementation rather than scattering numeric literals. Two consumers, both external to this repo slice:
 
 - Aqua's **WebView** — direct `fetch`/`WebSocket` calls for all data operations (§6, shapes in `CONTRACT.md`).
 - Aqua's **Tauri Rust host** — only calls `GET /api/health` at startup to decide whether to spawn this daemon.
@@ -143,7 +143,7 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 
 | Phase | Deliverable |
 |---|---|
-| 0 — Scaffold | `cargo new daemon`; `axum` router with `GET /api/health` and a WS echo route; confirm reachable from Windows via `http://localhost:61234` |
+| 0 – Scaffold | `cargo new daemon`; `axum` router with `GET /api/health` and a WS echo route; confirm reachable from Windows via `http://localhost:61234` |
 | 1 — Finder backend | Read-only `fs/list` + `fs/read` → full CRUD (`fs/op`, `fs/write`) → `notify` watcher + `/ws/fs-watch` |
 | 2 — Terminal backend | `portable-pty` session manager, `/api/pty/spawn`, `/ws/pty/:id` bridge, resize handling, cleanup on disconnect |
 | 3 — Activity Monitor backend | `sysinfo` polling loop, `/ws/sysmon` broadcast |
@@ -162,4 +162,4 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 
 ## 12. Immediate next step
 
-`cargo new daemon` inside WSL. Stand up `GET /api/health` and a `/ws/echo` route. Confirm it's reachable from Windows at `http://localhost:61234/api/health` before writing any real fs/pty/sysmon logic — that round-trip is the foundation everything else builds on.
+`cargo new daemon` inside WSL. Stand up `GET /api/health` and a `/ws/echo` route. Confirm it's reachable from Windows at `http://localhost:61234/api/health` before writing any real fs/pty/sysmon logic – that round-trip is the foundation everything else builds on.

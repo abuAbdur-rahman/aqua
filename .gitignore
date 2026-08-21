@@ -1,0 +1,13 @@
+# Rust
+**/target/
+
+# JavaScript
+**/node_modules/
+**/dist/
+
+# Environment and local tooling
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/

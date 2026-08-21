@@ -1,6 +1,6 @@
 # Aqua — App Plan (Tauri + Frontend)
 
-Repo slice: `app/` (`app/src-tauri/` + `app/frontend/`) — the Windows agent's working directory, with its own `app/AGENTS.md`. This is Aqua's native Windows shell — the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `CONTRACT.md`).
+Repo slice: `app/` (`app/src-tauri/` + `app/frontend/`) – the Windows agent's working directory, with its own `app/AGENTS.md`. This is Aqua's native Windows shell – the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `CONTRACT.md`).
 
 **Companion docs:**
 - `aqua-backend-plan.md` — owns the Rust daemon this app talks to
@@ -36,10 +36,10 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 
 Two halves inside one `.exe`, with different jobs:
 
-- **WebView (React UI)** — talks **directly** to the daemon over `fetch`/`WebSocket` at `http://localhost:61234`. No IPC proxying for data — same calls a browser tab would make.
+- **WebView (React UI)** – talks **directly** to the daemon over `fetch`/`WebSocket` at `http://localhost:61234`. No IPC proxying for data – same calls a browser tab would make.
 - **Tauri Rust host** — owns only OS-integration: daemon lifecycle (spawn, health-check, no relaunch if already running), the global Spotlight hotkey, the tray icon, frameless window config. Never touches file data, pty streams, or stats.
 
-Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — that's double-plumbing every daemon endpoint for no benefit. Let the WebView call the daemon directly; WSL2's localhost forwarding makes `http://localhost:61234` reachable from Windows automatically.
+Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – that's double-plumbing every daemon endpoint for no benefit. Let the WebView call the daemon directly; WSL2's localhost forwarding makes `http://localhost:61234` reachable from Windows automatically.
 
 ## 4. Tauri host design
 
@@ -64,14 +64,14 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — tha
 
 - `identifier: "com.abdul.aqua"` (or your preferred reverse-domain), `productName: "Aqua"`
 - `decorations: false` — no native title bar; you own the chrome, which is what makes the menu bar/traffic-light illusion work
-- `app.security.csp` — must explicitly allow `connect-src http://localhost:61234 ws://localhost:61234`, or the default CSP blocks the WebView's calls to the daemon
+- `app.security.csp` – must explicitly allow `connect-src http://localhost:61234 ws://localhost:61234`, or the default CSP blocks the WebView's calls to the daemon
 
 ## 5. Frontend design (React + TypeScript)
 
 **Stack:** React, TypeScript, Tailwind, Zustand (window/app state), Framer Motion (window/dock animation), `xterm.js` (terminal), Monaco Editor (code editor). All colors, spacing, and chrome dimensions come from `DESIGN.md` as CSS variables/Tailwind theme extensions — never hardcode a hex in a component.
 
 ```
-frontend/src/
+app/frontend/src/
   desktop/
     Desktop.tsx           # root: wallpaper, spaces container, drop target
     Dock.tsx
