@@ -4,7 +4,7 @@ The authoritative payload shapes for every path/channel listed in the app and ba
 
 **Wire format:** camelCase JSON everywhere. Rust structs use `#[serde(rename_all = "camelCase")]` so nothing snake_case leaks into the frontend and no translation layer is needed.
 
-**Status:** hand-written, matching the daemon before real code exists. Once `daemon/src/api/types.rs` exists, generate `frontend/src/lib/api-types.ts` from it with `specta` or `ts-rs` and delete the TS block below — a generated type can't drift, a hand-written doc can.
+**Status:** hand-written, matching the daemon before real code exists. Once `daemon/src/api/types.rs` exists, generate `app/frontend/src/lib/api-types.ts` from it with `specta` or `ts-rs` and delete the TS block below — a generated type can't drift, a hand-written doc can.
 
 ## Health
 

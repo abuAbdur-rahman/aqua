@@ -61,8 +61,8 @@ Apply these as new files (all three patches are written against an empty origina
 +## Aqua-specific rules (append-only, don't remove without checking CONTRACT.md/DESIGN.md still agree)
 +
 +- Wire format is camelCase JSON. Shapes live in `CONTRACT.md` — never invent or rename a field without updating that file in the same change.
-+- WebView talks **directly** to the daemon via `fetch`/`WebSocket` at `http://localhost:8080`. Do not add Tauri IPC commands for data operations (fs, pty, sysmon, search) — Tauri commands are reserved for OS-integration only: daemon lifecycle, global hotkey, tray.
-+- `tauri.conf.json`'s CSP must allow `connect-src http://localhost:8080 ws://localhost:8080`. If daemon calls silently fail with no network tab error, check this first.
++- WebView talks **directly** to the daemon via `fetch`/`WebSocket` at `http://localhost:61234`. Do not add Tauri IPC commands for data operations (fs, pty, sysmon, search) — Tauri commands are reserved for OS-integration only: daemon lifecycle, global hotkey, tray.
++- `tauri.conf.json`'s CSP must allow `connect-src http://localhost:61234 ws://localhost:61234`. If daemon calls silently fail with no network tab error, check this first.
 +- Never hardcode `-d Ubuntu` when spawning `wsl.exe`. Query `wsl -l -v` first — the user's default distro name may differ from the one this project assumes.
 +- All colors, spacing, and motion timing come from `DESIGN.md` tokens (CSS variables / Tailwind theme extension). No hardcoded hex or raw pixel values inside component files.
 +- Window chrome (traffic lights, title bar) is fully custom — `decorations: false` in Tauri config. Never assume or rely on the native Windows title bar being present.
