@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { motion, useMotionValue, useSpring, useTransform, AnimatePresence } from "framer-motion";
+import { motion, useMotionValue, useSpring, useTransform, AnimatePresence, type MotionValue } from "framer-motion";
 import { FiFolder, FiTerminal, FiCpu, FiCode, FiSearch, FiTrash2 } from "react-icons/fi";
 import { useWindowStore } from "../windows/store";
 
+// macOS Dock principles: width/height expansion (not scale), ripple via proximity, sub-pixel weighting, bottom anchor
+const BASE_SIZE = 40;
+const MAGNIFIED_SIZE = 64; // DESIGN.md 48→64, using 40→64 to keep recent tighter sizing but respect cap
+const PROXIMITY_RADIUS = 150;
 
 interface DockItem {
   id: string;
@@ -28,7 +32,7 @@ function DockIcon({
   launching,
 }: {
   item: DockItem;
-  mouseX: ReturnType<typeof useMotionValue<number>>;
+  mouseX: MotionValue<number>;
   onOpen: () => void;
   count: number;
   minimizedCount: number;
@@ -36,14 +40,16 @@ function DockIcon({
   launching: boolean;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
+
   const distance = useTransform(mouseX, (val: number) => {
-    const bounds = ref.current?.getBoundingClientRect();
-    if (!bounds) return 0;
-    return val - (bounds.left + bounds.width / 2);
+    const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
+    return val - bounds.x - bounds.width / 2;
   });
-  // proximity magnify 48→64: scale 1 → 1.33, only within ~120px
-  const scaleRaw = useTransform(distance, [-140, 0, 140], [1, 1.33, 1]);
-  const scale = useSpring(scaleRaw, { stiffness: 400, damping: 30, mass: 0.4 });
+
+  const rawSize = useTransform(distance, [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS], [BASE_SIZE, MAGNIFIED_SIZE, BASE_SIZE]);
+
+  // Apple-like spring: light mass, snappy, damped — GPU not hit: only width/height layout in dock island (<7 items)
+  const size = useSpring(rawSize, { mass: 0.1, stiffness: 150, damping: 12 });
 
   const running = count > 0 || minimizedCount > 0;
   const overflow = count > 3;
@@ -57,27 +63,20 @@ function DockIcon({
       title={item.label}
       onContextMenu={(e) => {
         e.preventDefault();
-        // dispatch custom event for context menu; parent handles
         const ev = new CustomEvent("aqua-dock-context", { detail: { appId: item.id, x: e.clientX, y: e.clientY } });
         window.dispatchEvent(ev);
       }}
       animate={launching ? { y: [0, -10, 0] } : {}}
       transition={launching ? { duration: 0.5, ease: [0.4, 0, 0.2, 1] } : {}}
-      style={{ scale, willChange: "transform" } as unknown as React.CSSProperties}
-      className="group relative flex flex-col items-center rounded-card p-1 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      style={{ width: size, height: size } as unknown as React.CSSProperties}
+      className="group relative flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-secondary ring-1 ring-white/5 transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
     >
-      <div
-        className={`relative flex h-12 w-12 items-center justify-center rounded-[10px] bg-bg-overlay text-text-secondary ring-1 ring-white/5 transition-colors group-hover:text-text-primary ${focused ? "ring-accent/40" : ""}`}
-      >
-        <item.icon className="h-6 w-6" aria-hidden="true" />
-        {/* focused underline glow 2px */}
-        {focused && (
-          <span className="absolute -bottom-1.5 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden="true" />
-        )}
-      </div>
-      {/* running dots */}
+      <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      {focused && (
+        <span className="absolute -bottom-1 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden="true" />
+      )}
       {running && (
-        <div className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5" aria-hidden="true">
+        <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5" aria-hidden="true">
           {overflow ? (
             <span className="text-[9px] font-medium leading-none text-accent">+{count}</span>
           ) : (
@@ -85,8 +84,12 @@ function DockIcon({
               <span key={i} className="h-1 w-1 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" />
             ))
           )}
-        </div>
+        </span>
       )}
+      {/* tooltip — scale on hover, GPU transform only */}
+      <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 scale-0 whitespace-nowrap rounded bg-bg-overlay px-2 py-1 text-xs text-text-primary shadow-lg ring-1 ring-white/10 transition-transform duration-150 group-hover:scale-100">
+        {item.label}
+      </span>
     </motion.button>
   );
 }
@@ -132,14 +135,23 @@ export function Dock() {
   const countFor = (appId: string) => windows.filter((w) => w.appId === appId && !w.minimized).length;
   const minCountFor = (appId: string) => windows.filter((w) => w.appId === appId && w.minimized).length;
 
+  // Trash also participates in magnification — same physics, separate motion value via shared mouseX
+  const trashRef = useRef<HTMLButtonElement>(null);
+  const trashDist = useTransform(mouseX, (val: number) => {
+    const b = trashRef.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
+    return val - b.x - b.width / 2;
+  });
+  const trashRaw = useTransform(trashDist, [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS], [BASE_SIZE, MAGNIFIED_SIZE, BASE_SIZE]);
+  const trashSize = useSpring(trashRaw, { mass: 0.1, stiffness: 150, damping: 12 });
+
   return (
     <>
-      <div
-        className="fixed bottom-2 left-1/2 z-50 flex -translate-x-1/2 items-end justify-center"
-        onMouseMove={(e) => mouseX.set(e.clientX)}
-        onMouseLeave={() => mouseX.set(Infinity)}
-      >
-        <div className="flex items-end gap-1 rounded-2xl border border-white/[0.08] bg-bg-elevated/95 px-2.5 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.06)_inset] backdrop-blur-xl">
+      <div className="fixed bottom-2 left-1/2 z-50 flex -translate-x-1/2 items-end justify-center">
+        <motion.div
+          onMouseMove={(e) => mouseX.set(e.pageX)}
+          onMouseLeave={() => mouseX.set(Infinity)}
+          className="flex h-16 items-end gap-3 rounded-2xl border border-white/[0.08] bg-bg-elevated/95 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45),0_1px_0_rgba(255,255,255,0.06)_inset] backdrop-blur-xl"
+        >
           {DOCK_ORDER.map((item) => (
             <DockIcon
               key={item.id}
@@ -152,20 +164,19 @@ export function Dock() {
               launching={launching === item.id}
             />
           ))}
-          {/* divider */}
-          <div className="mx-1 h-8 w-px self-center bg-white/10" aria-hidden="true" />
-          {/* Trash static per wireframe */}
-          <button
+          <div className="mx-1 h-7 w-px self-center bg-white/10" aria-hidden="true" />
+          <motion.button
+            ref={trashRef}
             aria-label="Trash"
             title="Trash"
-            className="flex h-12 w-12 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 focus-visible:outline-2 focus-visible:outline-accent"
+            style={{ width: trashSize, height: trashSize } as unknown as React.CSSProperties}
+            className="flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 focus-visible:outline-2 focus-visible:outline-accent"
           >
             <FiTrash2 className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
       </div>
 
-      {/* context menu */}
       <AnimatePresence>
         {ctx && (
           <motion.div
@@ -178,10 +189,7 @@ export function Dock() {
           >
             <button
               onClick={() => {
-                // Show All = restore minimized + focus
-                windows
-                  .filter((w) => w.appId === ctx.appId && w.minimized)
-                  .forEach((w) => restore(w.id));
+                windows.filter((w) => w.appId === ctx.appId && w.minimized).forEach((w) => restore(w.id));
                 setCtx(null);
               }}
               className="w-full rounded px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
@@ -200,9 +208,7 @@ export function Dock() {
             </button>
             <button
               onClick={() => {
-                windows
-                  .filter((w) => w.appId === ctx.appId)
-                  .forEach((w) => useWindowStore.getState().close(w.id));
+                windows.filter((w) => w.appId === ctx.appId).forEach((w) => useWindowStore.getState().close(w.id));
                 setCtx(null);
               }}
               className="w-full rounded px-3 py-1.5 text-left text-xs text-status-danger hover:bg-status-danger/10"
