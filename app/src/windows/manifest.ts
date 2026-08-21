@@ -7,6 +7,7 @@ export interface AppManifestEntry {
   icon: IconType;
   defaultSize: { w: number; h: number };
   minSize: { w: number; h: number };
+  menus: string[];
   dockHideDot?: boolean;
 }
 
@@ -17,6 +18,7 @@ export const appManifest: Record<string, AppManifestEntry> = {
     icon: FiFolder,
     defaultSize: { w: 720, h: 480 },
     minSize: { w: 420, h: 300 },
+    menus: ["File", "Edit", "View", "Go", "Window"],
   },
   terminal: {
     id: "terminal",
@@ -24,6 +26,7 @@ export const appManifest: Record<string, AppManifestEntry> = {
     icon: FiTerminal,
     defaultSize: { w: 680, h: 420 },
     minSize: { w: 400, h: 280 },
+    menus: ["Shell", "Edit", "View", "Window"],
   },
   editor: {
     id: "editor",
@@ -31,6 +34,7 @@ export const appManifest: Record<string, AppManifestEntry> = {
     icon: FiCode,
     defaultSize: { w: 800, h: 520 },
     minSize: { w: 480, h: 320 },
+    menus: ["File", "Edit", "Selection", "View", "Go"],
   },
   activity: {
     id: "activity",
@@ -38,6 +42,7 @@ export const appManifest: Record<string, AppManifestEntry> = {
     icon: FiCpu,
     defaultSize: { w: 640, h: 460 },
     minSize: { w: 400, h: 300 },
+    menus: ["View", "Window"],
   },
   spotlight: {
     id: "spotlight",
@@ -45,6 +50,7 @@ export const appManifest: Record<string, AppManifestEntry> = {
     icon: FiSearch,
     defaultSize: { w: 560, h: 320 },
     minSize: { w: 360, h: 240 },
+    menus: [],
     dockHideDot: true,
   },
 };
