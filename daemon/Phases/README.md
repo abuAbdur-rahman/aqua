@@ -1,6 +1,6 @@
 # Ubuntu Backend Phases
 
-These files expand the backend roadmap from `../../README.md` and `../../aqua-backend-plan.md` into implementation-ready scopes and acceptance criteria.
+These files expand the backend roadmap from `../../README.md` and `../PLAN.md` into implementation-ready scopes and acceptance criteria.
 
 | Phase | File | Deliverable |
 |---|---|---|

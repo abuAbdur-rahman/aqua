@@ -1,6 +1,6 @@
 # Aqua UI Spec — Spotlight
 
-Data source: `GET /api/search?q=` → `SearchResponse { files, apps, actions }`. Opened by a system-wide global hotkey (`tauri-plugin-global-shortcut`, `aqua-app-plan.md` §4), fires unfocused — this is the only panel in the OS that isn't a Window-Frame app; it's a floating overlay, not a window (no traffic lights, no title bar, no Dock icon of its own).
+Data source: `GET /api/search?q=` → `SearchResponse { files, apps, actions }`. Opened by a system-wide global hotkey (`tauri-plugin-global-shortcut`, `../PLAN.md` §4), fires unfocused — this is the only panel in the OS that isn't a Window-Frame app; it's a floating overlay, not a window (no traffic lights, no title bar, no Dock icon of its own).
 
 ## Layout
 
@@ -38,7 +38,7 @@ Selected row (arrow-key navigable) gets `--accent-bg` background across the full
 
 ## States
 
-**Empty query** (just opened, nothing typed): show a short "Recent" list instead of a blank panel — reuse whatever `recents` data Finder's sidebar already draws from `state/layout`'s `appState`/recents table (`aqua-backend-plan.md` §8 schema has a dedicated `recents` table with a `source` column) rather than inventing a second recents concept. An empty panel on first keystroke-target is a wasted screen; a truly new install with zero recents falls back to the placeholder-only input row, which is fine.
+**Empty query** (just opened, nothing typed): show a short "Recent" list instead of a blank panel — reuse whatever `recents` data Finder's sidebar already draws from `state/layout`'s `appState`/recents table (`../../daemon/PLAN.md` §8 schema has a dedicated `recents` table with a `source` column) rather than inventing a second recents concept. An empty panel on first keystroke-target is a wasted screen; a truly new install with zero recents falls back to the placeholder-only input row, which is fine.
 
 **Loading** (query in flight, debounce elapsed): keep showing the previous result set dimmed to ~50% opacity rather than clearing to blank-then-repopulate — a search box that flashes empty on every keystroke feels broken even when it's technically "correct."
 

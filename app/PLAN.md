@@ -1,11 +1,11 @@
 # Aqua — App Plan (Tauri + Frontend)
 
-Repo slice: `app/` (`app/src-tauri/` + `app/frontend/`) – the Windows agent's working directory, with its own `app/AGENTS.md`. This is Aqua's native Windows shell – the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `CONTRACT.md`).
+Repo slice: `app/` (`app/src-tauri/` + `app/frontend/`) – the Windows agent's working directory, with its own `app/AGENTS.md`. This is Aqua's native Windows shell – the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `../CONTRACT.md`).
 
 **Companion docs:**
-- `aqua-backend-plan.md` — owns the Rust daemon this app talks to
-- `CONTRACT.md` — exact request/response shapes for every call this app makes
-- `DESIGN.md` — dark-mode-only color tokens, chrome dimensions, motion timing
+- `../../daemon/PLAN.md` — owns the Rust daemon this app talks to
+- `../CONTRACT.md` — exact request/response shapes for every call this app makes
+- `../DESIGN.md` — dark-mode-only color tokens, chrome dimensions, motion timing
 
 Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per feature — a phase here is only as useful as the matching backend phase it depends on.
 
@@ -68,7 +68,7 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – tha
 
 ## 5. Frontend design (React + TypeScript)
 
-**Stack:** React, TypeScript, Tailwind, Zustand (window/app state), Framer Motion (window/dock animation), `xterm.js` (terminal), Monaco Editor (code editor). All colors, spacing, and chrome dimensions come from `DESIGN.md` as CSS variables/Tailwind theme extensions — never hardcode a hex in a component.
+**Stack:** React, TypeScript, Tailwind, Zustand (window/app state), Framer Motion (window/dock animation), `xterm.js` (terminal), Monaco Editor (code editor). All colors, spacing, and chrome dimensions come from `../DESIGN.md` as CSS variables/Tailwind theme extensions — never hardcode a hex in a component.
 
 ```
 app/frontend/src/
@@ -106,7 +106,7 @@ app/frontend/src/
 
 ## 6. API contract this app consumes
 
-Path/purpose map below; exact request/response shapes live in `CONTRACT.md`.
+Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 
 | Path | Type | Purpose |
 |---|---|---|
@@ -127,7 +127,7 @@ Path/purpose map below; exact request/response shapes live in `CONTRACT.md`.
 
 | Phase | Deliverable |
 |---|---|
-| 0 — Scaffold | `npm create tauri-app@latest`; Rust host spawns/health-checks the daemon; frameless window rendering wallpaper + empty Dock + empty MenuBar per `DESIGN.md`; confirm WebView → daemon WS round-trip |
+| 0 — Scaffold | `npm create tauri-app@latest`; Rust host spawns/health-checks the daemon; frameless window rendering wallpaper + empty Dock + empty MenuBar per `../DESIGN.md`; confirm WebView → daemon WS round-trip |
 | 1 — Window manager core | Drag, resize, focus/z-order, minimize-to-dock, single Space, generic `WindowFrame` |
 | 2 — Finder UI | Read-only list/icon view → full CRUD → live refresh via fs-watch → Quick Look preview pane |
 | 3 — Terminal UI | xterm.js wired to `/ws/pty/:id`, multi-tab within one window |
@@ -149,4 +149,4 @@ Path/purpose map below; exact request/response shapes live in `CONTRACT.md`.
 
 ## 9. Immediate next step
 
-`npm create tauri-app@latest` for the shell + frontend scaffold. Wire the Tauri `setup` hook to spawn `wsl.exe -d Ubuntu -- ./daemon` and poll `/api/health`. Render a full-viewport wallpaper div (per `DESIGN.md`) with a fixed Dock and MenuBar shell in a frameless window. Confirm the WebView-to-daemon WS round-trip before building any app panels — everything downstream depends on that channel.
+`npm create tauri-app@latest` for the shell + frontend scaffold. Wire the Tauri `setup` hook to spawn `wsl.exe -d Ubuntu -- ./daemon` and poll `/api/health`. Render a full-viewport wallpaper div (per `../DESIGN.md`) with a fixed Dock and MenuBar shell in a frameless window. Confirm the WebView-to-daemon WS round-trip before building any app panels — everything downstream depends on that channel.

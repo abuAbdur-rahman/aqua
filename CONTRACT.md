@@ -218,4 +218,4 @@ interface SpaceState {
 
 ## Ownership
 
-Backend plan owns the *existence* of each path/channel (§6 of `aqua-backend-plan.md`). This file owns the *shape*. If they disagree, this file is wrong and needs updating to match what the daemon actually emits — not the other way around, once real code exists.
+Backend plan owns the *existence* of each path/channel (§6 of `daemon/PLAN.md`). This file owns the *shape*. If they disagree, this file is wrong and needs updating to match what the daemon actually emits — not the other way around, once real code exists.

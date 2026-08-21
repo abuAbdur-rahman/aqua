@@ -2,7 +2,7 @@
 
 Data source: `GET /api/fs/list?path=` → `FsEntry[]`, live-refreshed over `WS /ws/fs-watch` (`FsWatchEvent`). Writes via `POST /api/fs/op` (`FsOp` union) and `GET /api/fs/read` for preview content. Shapes: `CONTRACT.md` §Filesystem.
 
-Sits inside the Window Frame from `UI-SPEC-01-Chrome.md`. Default window size per `aqua-app-plan.md` app manifest pattern — this spec doesn't set that number, the app manifest does.
+Sits inside the Window Frame from `UI-SPEC-01-Chrome.md`. Default window size per `../PLAN.md` app manifest pattern — this spec doesn't set that number, the app manifest does.
 
 ## Layout
 
@@ -32,7 +32,7 @@ Three-pane layout, sidebar and preview pane both collapsible (preview pane is cl
 
 ## Preview pane (Quick Look)
 
-Per `aqua-app-plan.md` §1: images render inline, PDFs paginate, markdown/code render (not raw-dump). Header of the pane shows filename + size; body swaps by kind:
+Per `../PLAN.md` §1: images render inline, PDFs paginate, markdown/code render (not raw-dump). Header of the pane shows filename + size; body swaps by kind:
 - Image: fit-to-pane, checkerboard behind transparency
 - PDF: page-by-page with a thin page-count indicator, not a continuous scroll — matches native Quick Look's paging feel
 - Markdown: rendered, not source
