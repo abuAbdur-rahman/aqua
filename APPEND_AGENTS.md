@@ -15,22 +15,40 @@ Apply these as new files (all three patches are written against an empty origina
 ```diff
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -0,0 +1,15 @@
-+# AGENTS.md (root — shared context)
+@@ -0,0 +1,33 @@
++# AGENTS.md
 +
-+This repo is checked out twice, on two different machines, by two different coding agents:
++Root context for every agent on Aqua. Read this first, in whichever clone you're in, before touching anything. This file is deliberately short — a long list of rules gets skimmed, not followed.
 +
-+- **Windows agent** — cwd `app/`, own rules in `app/AGENTS.md`, builds the Tauri app (`app/src-tauri/` + `app/frontend/`).
-+- **WSL agent** — cwd `daemon/`, own rules in `daemon/AGENTS.md`, builds the Rust/Axum daemon.
++## What this is
 +
-+**Rule for both agents: read this file for orientation, never edit it.** Only `app/AGENTS.md` and `daemon/AGENTS.md` are agent-writable, and each agent only ever writes its own. This is what keeps two agents working against the same repo from ever producing a git conflict on an instructions file — if you find yourself about to edit this root file, stop and put the change in your own scoped file instead.
++Aqua gives WSL Ubuntu a native, macOS-mannered desktop: a Tauri app on Windows talking to a Rust daemon inside WSL. Two repos, two agents, one shared history. Full picture in `README.md`.
 +
-+Shared reference docs, also read-only for agents unless a task explicitly asks you to update one:
++## Your scope
 +
-+- `README.md` — objective, architecture, build order
-+- `aqua-app-plan.md` / `aqua-backend-plan.md` — full plan for each side
-+- `CONTRACT.md` — the API shape between app and daemon; changing this affects both agents' work, treat it as a two-sided change
-+- `DESIGN.md` — dark-mode-only color tokens, chrome dimensions, motion timing
++You are one of two agents on this codebase:
++
++- **Windows agent** → `app/` only, rules in `app/AGENTS.md`
++- **WSL agent** → `daemon/` only, rules in `daemon/AGENTS.md`
++
++Stay inside your directory. If a task seems to need a change outside it, that's a two-sided change — say so and stop, don't make it.
++
++## Hard rules
++
++- Never edit this file. Your own rules go in your scoped `AGENTS.md`, not here.
++- Never edit `CONTRACT.md` unilaterally — it's the interface both sides depend on. Propose the change, don't just make it.
++- Never force-push, rewrite history, or touch a file outside your own scope.
++- Don't refactor, rename, or "clean up" anything you weren't asked to touch. Smallest correct diff wins.
++- Ambiguous request, or one that seems to reach past your scope? Ask. Don't guess and proceed.
++
++## Where the real instructions live
++
++| Need | File |
++|---|---|
++| Build/test commands, stack, code style | your scoped `AGENTS.md` |
++| API request/response shapes | `CONTRACT.md` |
++| Colors, spacing, motion timing | `DESIGN.md` |
++| Everything else | `README.md`, `aqua-app-plan.md`, `aqua-backend-plan.md` |
 ```
 
 ## Windows agent — `app/AGENTS.md`
@@ -43,8 +61,8 @@ Apply these as new files (all three patches are written against an empty origina
 +## Aqua-specific rules (append-only, don't remove without checking CONTRACT.md/DESIGN.md still agree)
 +
 +- Wire format is camelCase JSON. Shapes live in `CONTRACT.md` — never invent or rename a field without updating that file in the same change.
-+- WebView talks **directly** to the daemon via `fetch`/`WebSocket` at `http://localhost:61234`. Do not add Tauri IPC commands for data operations (fs, pty, sysmon, search) — Tauri commands are reserved for OS-integration only: daemon lifecycle, global hotkey, tray.
-+- `tauri.conf.json`'s CSP must allow `connect-src http://localhost:61234 ws://localhost:61234`. If daemon calls silently fail with no network tab error, check this first.
++- WebView talks **directly** to the daemon via `fetch`/`WebSocket` at `http://localhost:8080`. Do not add Tauri IPC commands for data operations (fs, pty, sysmon, search) — Tauri commands are reserved for OS-integration only: daemon lifecycle, global hotkey, tray.
++- `tauri.conf.json`'s CSP must allow `connect-src http://localhost:8080 ws://localhost:8080`. If daemon calls silently fail with no network tab error, check this first.
 +- Never hardcode `-d Ubuntu` when spawning `wsl.exe`. Query `wsl -l -v` first — the user's default distro name may differ from the one this project assumes.
 +- All colors, spacing, and motion timing come from `DESIGN.md` tokens (CSS variables / Tailwind theme extension). No hardcoded hex or raw pixel values inside component files.
 +- Window chrome (traffic lights, title bar) is fully custom — `decorations: false` in Tauri config. Never assume or rely on the native Windows title bar being present.
