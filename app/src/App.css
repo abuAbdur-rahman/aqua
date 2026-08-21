@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  --bg-base: #121212;
+  --bg-surface: #1a1a1e;
+  --bg-elevated: #232328;
+  --bg-overlay: #2c2c32;
+  --bg-hover: #34343b;
+
+  --text-primary: #f2f2f5;
+  --text-secondary: #a8a8b3;
+  --text-tertiary: #6e6e78;
+  --text-disabled: #4a4a52;
+
+  --accent: #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-bg: rgba(34, 211, 238, 0.14);
+  --accent-ring: rgba(34, 211, 238, 0.45);
+
+  --status-success: #32d74b;
+  --status-warning: #ffd60a;
+  --status-danger: #ff453a;
+  --status-info: #0a84ff;
+
+  --height-title-bar: 28px;
+  --height-menu-bar: 24px;
+  --height-dock: 64px;
+  --size-dock-icon: 48px;
+  --size-dock-icon-magnified: 64px;
+  --radius-window: 10px;
+  --radius-card: 8px;
+  --traffic-light-size: 12px;
+  --traffic-light-gap: 8px;
+}
+
+@theme {
+  --color-bg-base: #121212;
+  --color-bg-surface: #1a1a1e;
+  --color-bg-elevated: #232328;
+  --color-bg-overlay: #2c2c32;
+  --color-bg-hover: #34343b;
+
+  --color-text-primary: #f2f2f5;
+  --color-text-secondary: #a8a8b3;
+  --color-text-tertiary: #6e6e78;
+  --color-text-disabled: #4a4a52;
+
+  --color-accent: #22d3ee;
+  --color-accent-strong: #67e8f9;
+  --color-accent-bg: rgba(34, 211, 238, 0.14);
+  --color-accent-ring: rgba(34, 211, 238, 0.45);
+
+  --color-status-success: #32d74b;
+  --color-status-warning: #ffd60a;
+  --color-status-danger: #ff453a;
+  --color-status-info: #0a84ff;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-window: 10px;
+  --radius-card: 8px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
