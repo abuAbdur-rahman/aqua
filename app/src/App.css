@@ -62,7 +62,10 @@
   --radius-card: 8px;
 }
 
-* {
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: var(--bg-hover) transparent;
 }
@@ -71,10 +74,13 @@ html,
 body,
 #root {
   height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   margin: 0;
+  padding: 0;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
