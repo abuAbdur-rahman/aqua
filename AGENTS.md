@@ -30,4 +30,4 @@ Stay inside your directory. If a task seems to need a change outside it, that's 
 | Build/test commands, stack, code style | your scoped `AGENTS.md` |
 | API request/response shapes | `CONTRACT.md` |
 | Colors, spacing, motion timing | `DESIGN.md` |
-| Everything else | `README.md`, `aqua-app-plan.md`, `aqua-backend-plan.md` |
+| Everything else | `README.md`, `app/PLAN.md`, `daemon/PLAN.md` |

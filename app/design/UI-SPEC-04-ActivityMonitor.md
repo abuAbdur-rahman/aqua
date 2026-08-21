@@ -1,6 +1,6 @@
 # Aqua UI Spec — Activity Monitor
 
-Data source: `WS /ws/sysmon`, pushed ~1/sec (`SysmonStats`, nesting `DiskStat[]` / `ProcessStat[]`). Read-only — no kill/renice endpoint exists (`aqua-backend-plan.md` §1 locked scope), so this spec has no destructive actions to design around. Shapes: `CONTRACT.md` §Activity Monitor.
+Data source: `WS /ws/sysmon`, pushed ~1/sec (`SysmonStats`, nesting `DiskStat[]` / `ProcessStat[]`). Read-only — no kill/renice endpoint exists (`../../daemon/PLAN.md` §1 locked scope), so this spec has no destructive actions to design around. Shapes: `CONTRACT.md` §Activity Monitor.
 
 ## Layout
 

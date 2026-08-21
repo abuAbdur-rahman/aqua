@@ -48,7 +48,7 @@ Apply these as new files (all three patches are written against an empty origina
 +| Build/test commands, stack, code style | your scoped `AGENTS.md` |
 +| API request/response shapes | `CONTRACT.md` |
 +| Colors, spacing, motion timing | `DESIGN.md` |
-+| Everything else | `README.md`, `aqua-app-plan.md`, `aqua-backend-plan.md` |
++| Everything else | `README.md`, `app/PLAN.md`, `daemon/PLAN.md` |
 ```
 
 ## Windows agent — `app/AGENTS.md`

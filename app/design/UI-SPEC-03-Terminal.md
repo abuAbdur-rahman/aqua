@@ -1,6 +1,6 @@
 # Aqua UI Spec — Terminal
 
-Data source: `POST /api/pty/spawn` (`PtySpawnRequest`/`Response`), then `WS /ws/pty/:sessionId` — raw bytes both directions, control frames for `PtyResize`, server-sent `PtyExit`. Shapes: `CONTRACT.md` §Terminal. Rendered with `xterm.js` (`aqua-app-plan.md` §5).
+Data source: `POST /api/pty/spawn` (`PtySpawnRequest`/`Response`), then `WS /ws/pty/:sessionId` — raw bytes both directions, control frames for `PtyResize`, server-sent `PtyExit`. Shapes: `CONTRACT.md` §Terminal. Rendered with `xterm.js` (`../PLAN.md` §5).
 
 ## Layout
 

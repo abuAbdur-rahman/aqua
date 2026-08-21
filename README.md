@@ -11,8 +11,8 @@ Two independently-buildable pieces:
 
 Full detail lives in four companion docs:
 
-- [`aqua-app-plan.md`](./aqua-app-plan.md) — Tauri host + frontend
-- [`aqua-backend-plan.md`](./aqua-backend-plan.md) — Rust daemon
+- [`app/PLAN.md`](./app/PLAN.md) — Tauri host + frontend
+- [`daemon/PLAN.md`](./daemon/PLAN.md) — Rust daemon
 - [`CONTRACT.md`](./CONTRACT.md) — exact request/response shapes for every call between them
 - [`DESIGN.md`](./DESIGN.md) — dark-mode-only color tokens, chrome dimensions, motion timing
 
@@ -53,17 +53,16 @@ One GitHub repo, cloned twice — once per OS, each built with that OS's native 
 aqua/                                    # the repo, same on both sides
   AGENTS.md            # shared context – human-maintained, agents read but never edit
   app/                  # Windows agent's scope
-    src-tauri/          # Tauri Rust host – see aqua-app-plan.md
-    frontend/           # React/TS UI – see aqua-app-plan.md
+    PLAN.md             # Tauri host + frontend roadmap
+    src-tauri/          # Tauri Rust host
+    frontend/           # React/TS UI
     AGENTS.md           # Windows agent instructions
-  daemon/               # WSL agent's scope – see aqua-backend-plan.md
-    Cargo.toml          # Rust/Axum daemon
+  daemon/               # WSL agent's scope
+    PLAN.md             # Rust daemon roadmap
     src/
     Phases/
     AGENTS.md           # WSL agent instructions
   README.md
-  aqua-app-plan.md
-  aqua-backend-plan.md
   CONTRACT.md
   DESIGN.md
 ```

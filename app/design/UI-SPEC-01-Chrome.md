@@ -17,7 +17,7 @@ Height `24px` (`DESIGN.md`), full width, `--bg-elevated`, sits above everything 
   ^app icon+name   ^app menus (per focused app)        ^status  ^connection ^clock
 ```
 
-**Left cluster:** focused app's icon (16px) + name in `--text-primary`, then that app's menu items in `--text-secondary`, `--text-primary` on hover with `--bg-hover` pill behind the label. Menu config comes from the app's manifest (per `aqua-app-plan.md` §5 "app-as-plugin pattern") — Menu Bar itself renders whatever the focused app declares, it owns none of these labels.
+**Left cluster:** focused app's icon (16px) + name in `--text-primary`, then that app's menu items in `--text-secondary`, `--text-primary` on hover with `--bg-hover` pill behind the label. Menu config comes from the app's manifest (per `../PLAN.md` §5 "app-as-plugin pattern") — Menu Bar itself renders whatever the focused app declares, it owns none of these labels.
 
 **Right cluster**, left to right:
 1. Optional per-app quick indicators (e.g. Activity Monitor's live CPU %, if that app declares one)
@@ -53,7 +53,7 @@ Icons `48px`, magnify to `64px` max on hover/mouse-proximity (`DESIGN.md`: 120ms
 - **Running, focused:** icon gets a `2px` `--accent` underline glow instead of changing the icon itself — focus lives in the Menu Bar's app name too, so this is a secondary confirmation, not the primary one.
 - **Launching (daemon-backed app whose first data call hasn't returned):** icon bounces once (borrow the window-open easing, `DESIGN.md`, don't add a new curve) then settles to "running" — no separate spinner on the dock icon itself, the app's own window shows its Loading state per that app's spec.
 
-Right-click / long-press on a running icon → context menu: "Show All Windows", "Minimize", "Quit" (quit here means close all that app's windows, not kill the daemon — see `aqua-app-plan.md` §4 on daemon lifecycle).
+Right-click / long-press on a running icon → context menu: "Show All Windows", "Minimize", "Quit" (quit here means close all that app's windows, not kill the daemon — see `../PLAN.md` §4 on daemon lifecycle).
 
 ---
 

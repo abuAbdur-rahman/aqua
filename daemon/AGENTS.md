@@ -7,7 +7,7 @@ This directory owns Aqua's WSL Ubuntu backend. Work here is for the Rust/Axum da
 Read these root documents before changing backend behavior:
 
 - `../README.md` – product scope and cross-platform architecture
-- `../aqua-backend-plan.md` – daemon architecture and roadmap
+- `PLAN.md` – daemon architecture and roadmap
 - `../CONTRACT.md` – authoritative wire shapes
 - `../DESIGN.md` – frontend-only unless backend behavior explicitly depends on it
 - `Phases/` – phase-specific implementation and verification requirements

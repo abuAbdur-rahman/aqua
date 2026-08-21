@@ -2,7 +2,7 @@
 
 This directory owns Aqua's Windows desktop app. Work here covers the Tauri Rust host and React frontend under `app/src-tauri/` and `app/frontend/`.
 
-Read the root `../AGENTS.md`, `../README.md`, `../aqua-app-plan.md`, `../CONTRACT.md`, `../DESIGN.md`, and `app/design/UI-SPEC-00-INDEX.md` + `UI-SPEC-01-Chrome.md` before implementation. For app panels also read `UI-SPEC-02-Finder.md`–`06-Spotlight.md` — they are the source of truth for layout/states/composition (DESIGN.md = tokens, CONTRACT.md = shapes, UI-SPEC-* = where they go).
+Read the root `../AGENTS.md`, `../README.md`, `PLAN.md`, `../CONTRACT.md`, `../DESIGN.md`, and `design/UI-SPEC-00-INDEX.md` + `UI-SPEC-01-Chrome.md` before implementation. For app panels also read `UI-SPEC-02-Finder.md`–`06-Spotlight.md` — they are the source of truth for layout/states/composition (DESIGN.md = tokens, CONTRACT.md = shapes, UI-SPEC-* = where they go).
 
 ## App boundaries
 

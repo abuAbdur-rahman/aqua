@@ -3,8 +3,8 @@
 Repo slice: `daemon/` – the WSL agent's working directory, with its own `daemon/AGENTS.md`. A single Rust binary running **inside WSL Ubuntu**, bound to `127.0.0.1`. It's the only thing that touches the real filesystem, process table, and shell – Aqua's Tauri app has no direct OS access at all, it only calls this API.
 
 **Companion docs:**
-- `aqua-app-plan.md` — owns the Tauri/React app that consumes this API
-- `CONTRACT.md` — exact request/response shapes for every path/channel below
+- `../app/PLAN.md` — owns the Tauri/React app that consumes this API
+- `../CONTRACT.md` — exact request/response shapes for every path/channel below
 
 Build order: this doc's §10 Phase 0 → app doc's §7 Phase 0 → then alternate per feature (finish a daemon endpoint before building its UI).
 
@@ -27,7 +27,7 @@ Real OS-level primitives (pty allocation, `sysinfo`, `notify` filesystem watchin
 
 Single binary, `axum` router, bound to `127.0.0.1:61234`. Port `61234` is Aqua's fixed loopback daemon port; keep it centralized in the implementation rather than scattering numeric literals. Two consumers, both external to this repo slice:
 
-- Aqua's **WebView** — direct `fetch`/`WebSocket` calls for all data operations (§6, shapes in `CONTRACT.md`).
+- Aqua's **WebView** — direct `fetch`/`WebSocket` calls for all data operations (§6, shapes in `../CONTRACT.md`).
 - Aqua's **Tauri Rust host** — only calls `GET /api/health` at startup to decide whether to spawn this daemon.
 
 This daemon doesn't know or care which one is calling — same API either way.
@@ -74,7 +74,7 @@ daemon/
       ws.rs                # WS route handlers (multiplexed by channel)
 ```
 
-## 6. API contract (path map — shapes in `CONTRACT.md`)
+## 6. API contract (path map — shapes in `../CONTRACT.md`)
 
 | Path | Type | Purpose |
 |---|---|---|
@@ -91,7 +91,7 @@ daemon/
 | `GET /api/state/layout` | REST | Load saved window/space layout |
 | `PUT /api/state/layout` | REST | Persist layout |
 
-Changing this contract means updating `CONTRACT.md` and `aqua-app-plan.md` §6 too — `CONTRACT.md` is the one either side should code against.
+Changing this contract means updating `../CONTRACT.md` and `../app/PLAN.md` §6 too — `../CONTRACT.md` is the one either side should code against.
 
 ## 7. Real-time data flows
 

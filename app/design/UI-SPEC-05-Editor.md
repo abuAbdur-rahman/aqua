@@ -1,6 +1,6 @@
 # Aqua UI Spec — Editor
 
-Data source: `GET /api/fs/read` (`FsReadResponse`) to open, `PUT /api/fs/write` (`FsWriteRequest`/`Response`) to save. Monaco-based, multi-tab, lazy-loaded only on first open (`aqua-app-plan.md` §8 risk table — this spec doesn't change that, just designs around it). Shapes: `CONTRACT.md` §Filesystem.
+Data source: `GET /api/fs/read` (`FsReadResponse`) to open, `PUT /api/fs/write` (`FsWriteRequest`/`Response`) to save. Monaco-based, multi-tab, lazy-loaded only on first open (`../PLAN.md` §8 risk table — this spec doesn't change that, just designs around it). Shapes: `CONTRACT.md` §Filesystem.
 
 ## Layout
 
