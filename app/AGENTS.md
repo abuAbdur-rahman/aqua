@@ -25,3 +25,12 @@ Read the root `../AGENTS.md`, `../README.md`, `../aqua-app-plan.md`, `../CONTRAC
 ## Verification
 
 Run the frontend and Tauri checks defined by the actual package manifests after they exist. Verify daemon health and WebSocket connectivity from Windows separately; do not infer Windows-to-WSL reachability from WSL-local tests.
+
+## Local implementation notes (app agent)
+
+- Package manager is **pnpm** (`packageManager: pnpm@11.6.0`). Run all frontend commands with `pnpm -C app ...`. Lockfile is `app/pnpm-lock.yaml`; `app/pnpm-workspace.yaml` allowlists `esbuild` for `onlyBuiltDependencies`.
+- UI stack: **Tailwind CSS v4** via `@tailwindcss/vite` (`@import "tailwindcss"` + CSS-first `@theme` in `app/src/App.css` mapping `DESIGN.md` tokens), **react-icons** as the sole icon library (no emoji/handwritten SVG/second library), Inter + JetBrains Mono.
+- Vite project lives at `app/` (not `app/frontend/`); `app/src-tauri/tauri.conf.json` `frontendDist` is `../dist`. If the team later moves vite to `app/frontend/`, update `frontendDist`, `beforeDevCommand`/`beforeBuildCommand`, and this file in one commit.
+- Actual phase specs for this workstream are `app/Phases/0.md`–`8.md`; `0.md` is the source of truth for Phase 0 scaffold/lifecycle/CSP/port.
+- Daemon port is `61234` everywhere (`app/src/lib/api.ts`, `app/src-tauri/tauri.conf.json` CSP, `app/src-tauri/src/lib.rs` health poll). Do not reintroduce `8080`.
+- Windows checkout path for this clone is `D:\Self\aqua\app\` (app agent cwd). Do not edit `daemon/`; the WSL agent owns it and `daemon/AGENTS.md`.
