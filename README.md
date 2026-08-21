@@ -25,7 +25,7 @@ This README is the entry point: what it is, how the pieces fit, and where to sta
 [ Tauri Rust host ]     ──spawn + health-check──▶ [ same daemon ]
 ```
 
-The WebView talks straight to the daemon over `http://localhost:8080` — WSL2 forwards that automatically, no proxying needed. The Tauri Rust host only starts the daemon and owns OS-integration bits (global hotkey, tray, frameless window). Two consumers of one API, defined once in `CONTRACT.md`.
+The WebView talks straight to the daemon over `http://localhost:61234` — WSL2 forwards that automatically, no proxying needed. The Tauri Rust host only starts the daemon and owns OS-integration bits (global hotkey, tray, frameless window). Two consumers of one API, defined once in `CONTRACT.md`.
 
 ## Locked scope
 
@@ -51,9 +51,14 @@ One GitHub repo, cloned twice — once per OS, each built with that OS's native 
 
 ```
 aqua/                                    # the repo, same on both sides
-  src-tauri/          # Tauri Rust host — see aqua-app-plan.md
-  frontend/            # React/TS UI — see aqua-app-plan.md
-  daemon/               # Rust/Axum backend — see aqua-backend-plan.md
+  AGENTS.md            # shared context — human-maintained, agents read but never edit
+  app/                  # Windows agent's scope — its own AGENTS.md lives here
+    src-tauri/            # Tauri Rust host — see aqua-app-plan.md
+    frontend/              # React/TS UI — see aqua-app-plan.md
+    AGENTS.md
+  daemon/                # WSL agent's scope — its own AGENTS.md lives here
+    ...                    # Rust/Axum backend — see aqua-backend-plan.md
+    AGENTS.md
   README.md
   aqua-app-plan.md
   aqua-backend-plan.md
@@ -61,9 +66,11 @@ aqua/                                    # the repo, same on both sides
   DESIGN.md
 ```
 
+`src-tauri/` nests inside `app/` (matching how `create-tauri-app` scaffolds normally look) rather than sitting as a sibling to `frontend/` — this gives the Windows agent one directory, `app/`, to point its cwd at, and one `AGENTS.md` inside it that covers both the Rust host and the frontend. The WSL agent gets the same treatment under `daemon/`. Point each agent's working directory at its own subtree so it discovers the right file automatically instead of needing to be told every session — and because the two files never share a path, nothing about running two agents against the same underlying repo can produce a git conflict between them. The only file both agents can see is the root `AGENTS.md`, and the rule there is simple: they read it, they don't write it.
+
 ```
-WSL (ext4):      ~/projects/aqua-daemon/         → build/run daemon/ from here
-Windows (NTFS):  C:\Users\abdul\projects\aqua-app\  → build/run src-tauri/ + frontend/ from here
+WSL (ext4):      ~/projects/aqua-daemon/         → build/run daemon/ from here, WSL agent's cwd
+Windows (NTFS):  C:\Users\abdul\projects\aqua-app\  → build/run app/ from here, Windows agent's cwd
 ```
 
 Git is the sync layer between the two clones, not a shared mount — push after finishing a piece on one side, pull before starting the matching piece on the other. Maps directly onto the alternating build order in "Where to start" below. `.gitattributes` at repo root should force `* text=auto eol=lf` so files don't show as dirty purely from crossing OSes; `target/`, `node_modules/`, and `dist/` stay gitignored as usual on both sides.
@@ -72,7 +79,7 @@ Git is the sync layer between the two clones, not a shared mount — push after 
 
 Build order respects the one real dependency: **the app can't do anything until the daemon exists and responds to a health check.** After that, alternate — build a daemon endpoint, then the UI that consumes it — rather than finishing either side end-to-end first.
 
-- [ ] **Backend Phase 0** — `cargo new daemon`, `/api/health` + WS echo, confirm reachable from Windows at `http://localhost:8080`
+- [ ] **Backend Phase 0** — `cargo new daemon`, `/api/health` + WS echo, confirm reachable from Windows at `http://localhost:61234`
 - [ ] **App Phase 0** — Tauri scaffold, spawn/health-check the daemon, frameless window + empty Dock/MenuBar (per `DESIGN.md`), confirm WebView → daemon WS round-trip
 - [ ] **App Phase 1** — Window manager core (drag/resize/focus/minimize, single Space)
 - [ ] **Backend Phase 1** — Finder backend (CRUD + fs-watch)
@@ -95,4 +102,4 @@ Build order respects the one real dependency: **the app can't do anything until 
 cargo new daemon
 ```
 
-inside WSL. Stand up `GET /api/health` and a `/ws/echo` route, confirm you can hit `http://localhost:8080/api/health` from a Windows browser or `curl.exe`. That's the one thing every other phase, in every doc, depends on.
+inside WSL. Stand up `GET /api/health` and a `/ws/echo` route, confirm you can hit `http://localhost:61234/api/health` from a Windows browser or `curl.exe`. That's the one thing every other phase, in every doc, depends on.

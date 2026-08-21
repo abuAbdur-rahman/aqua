@@ -1,6 +1,6 @@
 # Aqua — App Plan (Tauri + Frontend)
 
-Repo slice: `src-tauri/` + `frontend/`. This is Aqua's native Windows shell — the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `CONTRACT.md`).
+Repo slice: `app/` (`app/src-tauri/` + `app/frontend/`) — the Windows agent's working directory, with its own `app/AGENTS.md`. This is Aqua's native Windows shell — the window manager, every visible panel, and the OS-integration glue (daemon lifecycle, global hotkey, tray). It owns no real data; everything it shows comes from the daemon over the API contract in §6 (full shapes: `CONTRACT.md`).
 
 **Companion docs:**
 - `aqua-backend-plan.md` — owns the Rust daemon this app talks to
@@ -36,10 +36,10 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 
 Two halves inside one `.exe`, with different jobs:
 
-- **WebView (React UI)** — talks **directly** to the daemon over `fetch`/`WebSocket` at `http://localhost:8080`. No IPC proxying for data — same calls a browser tab would make.
+- **WebView (React UI)** — talks **directly** to the daemon over `fetch`/`WebSocket` at `http://localhost:61234`. No IPC proxying for data — same calls a browser tab would make.
 - **Tauri Rust host** — owns only OS-integration: daemon lifecycle (spawn, health-check, no relaunch if already running), the global Spotlight hotkey, the tray icon, frameless window config. Never touches file data, pty streams, or stats.
 
-Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — that's double-plumbing every daemon endpoint for no benefit. Let the WebView call the daemon directly; WSL2's localhost forwarding makes `http://localhost:8080` reachable from Windows automatically.
+Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — that's double-plumbing every daemon endpoint for no benefit. Let the WebView call the daemon directly; WSL2's localhost forwarding makes `http://localhost:61234` reachable from Windows automatically.
 
 ## 4. Tauri host design
 
@@ -55,7 +55,7 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — tha
 
 ### Startup sequence
 
-1. Ping `GET http://localhost:8080/api/health`.
+1. Ping `GET http://localhost:61234/api/health`.
 2. If it responds, the daemon's already running — show the window.
 3. If not, spawn `wsl.exe -d Ubuntu -- ./daemon`, poll health every ~200ms (timeout ~5s), then show the window.
 4. On app quit, **leave the daemon running** — killing it drops active pty sessions and in-memory index state. A "Quit and stop backend" tray item can be added later for an explicit full shutdown.
@@ -64,7 +64,7 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC — tha
 
 - `identifier: "com.abdul.aqua"` (or your preferred reverse-domain), `productName: "Aqua"`
 - `decorations: false` — no native title bar; you own the chrome, which is what makes the menu bar/traffic-light illusion work
-- `app.security.csp` — must explicitly allow `connect-src http://localhost:8080 ws://localhost:8080`, or the default CSP blocks the WebView's calls to the daemon
+- `app.security.csp` — must explicitly allow `connect-src http://localhost:61234 ws://localhost:61234`, or the default CSP blocks the WebView's calls to the daemon
 
 ## 5. Frontend design (React + TypeScript)
 
@@ -97,8 +97,8 @@ frontend/src/
     spotlight/
       SpotlightPalette.tsx
   lib/
-    ws.ts                      # typed WS channel multiplexer, points at localhost:8080
-    api.ts                     # typed REST client, points at localhost:8080
+    ws.ts                      # typed WS channel multiplexer, points at localhost:61234
+    api.ts                     # typed REST client, points at localhost:61234
     api-types.ts                # from CONTRACT.md — generated once real daemon code exists
 ```
 
@@ -141,7 +141,7 @@ Path/purpose map below; exact request/response shapes live in `CONTRACT.md`.
 
 | Risk | Mitigation |
 |---|---|
-| Tauri's default CSP blocks calls to localhost | Explicitly allowlist `connect-src` for `http://localhost:8080` / `ws://localhost:8080` |
+| Tauri's default CSP blocks calls to localhost | Explicitly allowlist `connect-src` for `http://localhost:61234` / `ws://localhost:61234` |
 | Hardcoded `-d Ubuntu` fails if default distro is named differently | Query `wsl -l -v` from the Rust host at startup instead of hardcoding |
 | Daemon not ready yet when window shows | Splash/loading state driven by the health-check poll in the startup sequence |
 | Monaco bundle size | Lazy-load Monaco only when Editor first opens |
