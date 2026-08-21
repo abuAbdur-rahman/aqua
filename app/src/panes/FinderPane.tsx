@@ -1,80 +1,312 @@
-import { FiFolder, FiFile, FiImage, FiFileText } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FiChevronDown,
+  FiChevronRight,
+  FiCode,
+  FiFile,
+  FiFileText,
+  FiFolder,
+  FiGrid,
+  FiImage,
+  FiList,
+  FiMoreHorizontal,
+  FiRefreshCw,
+  FiTrash2,
+  FiX,
+} from "react-icons/fi";
+import {
+  ApiError,
+  createDirectory,
+  deleteEntry,
+  listDirectory,
+  readFile,
+  renameEntry,
+  type FsEntry,
+} from "../lib/filesystem";
+import { useFsWatch } from "../lib/useFsWatch";
 
-type State = "loading" | "empty" | "populated" | "error";
-export function FinderPane({ state = "populated" as State }) {
-  if (state === "loading") {
-    return (
-      <div className="flex h-full">
-        <div className="w-44 shrink-0 border-r border-bg-hover bg-bg-elevated p-3">
-          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-6 rounded bg-bg-hover/60 animate-pulse" />)}</div>
-        </div>
-        <div className="flex-1 p-3 space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-7 rounded bg-bg-hover/50 animate-pulse" />)}
-        </div>
-      </div>
-    );
-  }
-  if (state === "empty") {
-    return (
-      <div className="flex h-full">
-        <div className="w-44 shrink-0 border-r border-bg-hover bg-bg-elevated p-3">
-          <div className="rounded bg-accent-bg px-2 py-1.5 text-xs font-medium text-accent">⌂ Home</div>
-        </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <FiFolder className="h-10 w-10 text-text-tertiary" aria-hidden="true" />
-          <p className="text-sm font-medium text-text-primary">This folder is empty</p>
-          <button className="rounded-card bg-accent px-3 py-1.5 text-xs font-medium text-bg-base hover:bg-accent-strong">New Folder</button>
-        </div>
-      </div>
-    );
-  }
-  if (state === "error") {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="border-l-2 border-status-danger bg-status-danger/10 px-3 py-2 text-xs">
-          <p className="font-medium text-text-primary">Couldn&apos;t complete that action</p>
-          <p className="font-mono text-[11px] text-text-secondary">ENOENT: path not found</p>
-        </div>
-        <div className="p-4 text-xs text-text-tertiary">Go to parent folder or retry.</div>
-      </div>
-    );
-  }
+type ViewMode = "list" | "icons";
+type LoadState = "loading" | "empty" | "populated" | "error";
+
+const HOME_PATH = ".";
+
+function formatSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatModified(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+}
+
+function isPreviewable(entry: FsEntry) {
+  return entry.kind === "file" && /\.(md|mdx|txt|json|ts|tsx|js|jsx|rs|toml|css|html|yaml|yml)$/i.test(entry.name);
+}
+
+function entryIcon(entry: FsEntry) {
+  if (entry.kind === "dir") return <FiFolder className="text-accent" aria-hidden="true" />;
+  if (entry.kind === "symlink") return <FiFile className="text-status-info" aria-hidden="true" />;
+  if (/\.(png|jpe?g|gif|webp|svg)$/i.test(entry.name)) return <FiImage className="text-status-warning" aria-hidden="true" />;
+  if (/\.(md|txt|json|toml)$/i.test(entry.name)) return <FiFileText className="text-text-secondary" aria-hidden="true" />;
+  return <FiCode className="text-text-secondary" aria-hidden="true" />;
+}
+
+function parentPath(path: string) {
+  if (path === HOME_PATH || path === "/") return HOME_PATH;
+  const normalized = path.replace(/\\/g, "/").replace(/\/$/, "");
+  const index = normalized.lastIndexOf("/");
+  return index <= 0 ? "/" : normalized.slice(0, index);
+}
+
+function breadcrumbs(path: string) {
+  if (path === HOME_PATH) return [{ label: "Home", path: HOME_PATH }];
+  const parts = path.split("/").filter(Boolean);
+  return parts.map((part, index) => ({
+    label: part,
+    path: path.startsWith("/") ? `/${parts.slice(0, index + 1).join("/")}` : parts.slice(0, index + 1).join("/"),
+  }));
+}
+
+export function FinderPane() {
+  const [path, setPath] = useState(HOME_PATH);
+  const [entries, setEntries] = useState<FsEntry[]>([]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ entry: FsEntry; content?: string; error?: string } | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>("list");
+  const [sortKey, setSortKey] = useState<keyof FsEntry>("name");
+  const [sortAscending, setSortAscending] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showPreview, setShowPreview] = useState(false);
+  const [editingPath, setEditingPath] = useState(false);
+  const [pathInput, setPathInput] = useState(HOME_PATH);
+
+  const load = useCallback(async () => {
+    setLoadState("loading");
+    setError(null);
+    try {
+      const next = await listDirectory(path);
+      setEntries(next);
+      setLoadState(next.length === 0 ? "empty" : "populated");
+      setSelectedPath((current) => next.some((entry) => entry.path === current) ? current : null);
+    } catch (cause: unknown) {
+      setLoadState("error");
+      setError(cause instanceof Error ? cause.message : "Unable to read this folder");
+    }
+  }, [path]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    setPathInput(path);
+  }, [path]);
+
+  const onWatchEvent = useCallback((event: import("../lib/filesystem").FsWatchEvent) => {
+    const firstEntry = entries[0];
+    const currentPath = path === HOME_PATH && firstEntry
+      ? firstEntry.path.slice(0, -(firstEntry.name.length + 1))
+      : path;
+    if (parentPath(event.path) === currentPath) void load();
+  }, [entries, load, path]);
+
+  useFsWatch(path, onWatchEvent);
+
+  const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
+    if (left.kind !== right.kind) return left.kind === "dir" ? -1 : 1;
+    const leftValue = left[sortKey];
+    const rightValue = right[sortKey];
+    const comparison = typeof leftValue === "number" && typeof rightValue === "number"
+      ? leftValue - rightValue
+      : String(leftValue).localeCompare(String(rightValue));
+    return sortAscending ? comparison : -comparison;
+  }), [entries, sortAscending, sortKey]);
+
+  const selected = entries.find((entry) => entry.path === selectedPath) ?? null;
+
+  const selectEntry = async (entry: FsEntry) => {
+    setSelectedPath(entry.path);
+    if (entry.kind !== "file") return;
+    setShowPreview(true);
+    setPreview({ entry });
+    if (!isPreviewable(entry)) return;
+    try {
+      const result = await readFile(entry.path);
+      setPreview({ entry, content: result.encoding === "utf8" ? result.content : undefined, error: result.truncated ? "Preview truncated for large file" : undefined });
+    } catch (cause: unknown) {
+      setPreview({ entry, error: cause instanceof Error ? cause.message : "Unable to preview file" });
+    }
+  };
+
+  const activate = (entry: FsEntry) => {
+    if (entry.kind === "dir") {
+      setPath(entry.path);
+      setSelectedPath(null);
+      setPreview(null);
+      return;
+    }
+    void selectEntry(entry);
+  };
+
+  const newFolder = async () => {
+    const name = window.prompt("New folder name");
+    if (!name?.trim()) return;
+    try {
+      await createDirectory(`${path.replace(/\/$/, "")}/${name.trim()}`);
+      await load();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Couldn't create folder");
+    }
+  };
+
+  const rename = async () => {
+    if (!selected) return;
+    const name = window.prompt("Rename", selected.name);
+    if (!name?.trim() || name.trim() === selected.name) return;
+    try {
+      await renameEntry(selected.path, name.trim());
+      await load();
+    } catch (cause: unknown) {
+      setError(cause instanceof ApiError && cause.status === 409 ? "That name is already in use" : cause instanceof Error ? cause.message : "Couldn't rename item");
+    }
+  };
+
+  const remove = async () => {
+    if (!selected || !window.confirm(`Delete ${selected.name} permanently?`)) return;
+    try {
+      await deleteEntry(selected.path);
+      setSelectedPath(null);
+      setPreview(null);
+      await load();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Couldn't delete item");
+    }
+  };
+
+  const toggleSort = (key: keyof FsEntry) => {
+    if (sortKey === key) setSortAscending((value) => !value);
+    else {
+      setSortKey(key);
+      setSortAscending(true);
+    }
+  };
+
+  const submitPath = () => {
+    const nextPath = pathInput.trim();
+    if (nextPath) setPath(nextPath);
+    else setPathInput(path);
+    setEditingPath(false);
+  };
+
   return (
-    <div className="flex h-full text-xs">
-      <div className="w-44 shrink-0 border-r border-bg-hover bg-bg-elevated p-2">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 rounded bg-accent-bg px-2 py-1.5 text-accent"><span>⌂</span> Home</div>
-          <div className="flex items-center gap-2 px-2 py-1 text-text-secondary"><FiFolder className="h-3.5 w-3.5" /> projects</div>
-          <div className="flex items-center gap-2 px-2 py-1 text-text-secondary"><FiFolder className="h-3.5 w-3.5" /> Downloads</div>
-          <div className="my-2 border-t border-bg-hover" />
-          <div className="flex items-center gap-2 px-2 py-1 text-text-tertiary"><FiTrash2Icon /> Trash</div>
-        </div>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-1 border-b border-bg-hover px-3 py-2 text-[11px] text-text-tertiary">
-          <span className="hover:text-text-primary">~</span> / <span className="hover:text-text-primary">projects</span> / <span className="text-text-primary">aqua</span>
-        </div>
-        <div className="flex flex-1">
-          <div className="flex-1">
-            <div className="grid grid-cols-[1fr_80px_90px] gap-2 border-b border-bg-hover px-3 py-1.5 text-[11px] font-medium text-text-tertiary">
-              <span>Name</span><span>Size</span><span>Modified</span>
-            </div>
-            <div className="divide-y divide-bg-hover/50">
-              <div className="grid grid-cols-[1fr_80px_90px] items-center px-3 py-1.5 hover:bg-bg-hover/40"><span className="flex items-center gap-1.5"><FiFolder className="h-3.5 w-3.5 text-accent" />daemon</span><span className="text-text-tertiary">—</span><span className="text-text-tertiary">2h ago</span></div>
-              <div className="grid grid-cols-[1fr_80px_90px] items-center bg-accent-bg px-3 py-1.5"><span className="flex items-center gap-1.5"><FiFileText className="h-3.5 w-3.5" />README.md</span><span>4 KB</span><span>1d ago</span></div>
-              <div className="grid grid-cols-[1fr_80px_90px] items-center px-3 py-1.5 hover:bg-bg-hover/40"><span className="flex items-center gap-1.5"><FiImage className="h-3.5 w-3.5" />wallpaper.png</span><span>2.1 MB</span><span>3d ago</span></div>
-              <div className="grid grid-cols-[1fr_80px_90px] items-center px-3 py-1.5 hover:bg-bg-hover/40"><span className="flex items-center gap-1.5"><FiFile className="h-3.5 w-3.5" />CONTRACT.md</span><span>6 KB</span><span>1d ago</span></div>
-            </div>
+    <div className="flex h-full min-w-0 text-xs">
+      {showSidebar && (
+        <aside className="w-40 shrink-0 border-r border-bg-hover bg-bg-elevated p-2" aria-label="Finder sidebar">
+          <button className="flex min-h-8 w-full items-center gap-2 rounded-card bg-accent-bg px-2 text-left text-accent" onClick={() => setPath(HOME_PATH)}>
+            <FiFolder aria-hidden="true" /> Home
+          </button>
+          <div className="mt-3 border-t border-bg-hover pt-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Locations</div>
+          <button className="mt-1 flex min-h-8 w-full items-center gap-2 rounded-card px-2 text-left text-text-secondary hover:bg-bg-hover" onClick={() => setPath(parentPath(path))}>
+            <FiChevronRight aria-hidden="true" /> Parent folder
+          </button>
+          <button className="mt-1 flex min-h-8 w-full items-center gap-2 rounded-card px-2 text-left text-text-secondary hover:bg-bg-hover" onClick={newFolder}>
+            <FiFolder aria-hidden="true" /> New folder
+          </button>
+          <div className="mt-3 border-t border-bg-hover pt-2">
+            <button className="flex min-h-8 w-full items-center gap-2 rounded-card px-2 text-left text-text-tertiary hover:bg-bg-hover" onClick={() => void load()}>
+              <FiRefreshCw aria-hidden="true" /> Refresh
+            </button>
           </div>
-          <div className="hidden w-48 shrink-0 border-l border-bg-hover bg-bg-overlay/30 p-3 lg:block">
-            <p className="text-[11px] font-medium text-text-primary">README.md — 4 KB</p>
-            <div className="mt-2 rounded border border-bg-hover bg-bg-surface p-2 text-[11px] leading-relaxed text-text-secondary">Preview pane — image / pdf / markdown render per spec.</div>
+        </aside>
+      )}
+
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-9 items-center gap-1 border-b border-bg-hover bg-bg-elevated px-2">
+          <button className="mr-1 rounded p-1.5 text-text-secondary hover:bg-bg-hover" aria-label={showSidebar ? "Hide sidebar" : "Show sidebar"} onClick={() => setShowSidebar((value) => !value)}>
+            <FiChevronDown className={showSidebar ? "" : "-rotate-90"} aria-hidden="true" />
+          </button>
+          {editingPath ? (
+            <input
+              autoFocus
+              aria-label="Folder path"
+              className="min-w-0 flex-1 rounded-card border border-accent/50 bg-bg-surface px-2 py-1 text-text-primary outline-none"
+              value={pathInput}
+              onBlur={submitPath}
+              onChange={(event) => setPathInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitPath();
+                if (event.key === "Escape") {
+                  setPathInput(path);
+                  setEditingPath(false);
+                }
+              }}
+            />
+          ) : (
+            <div className="flex min-w-0 items-center gap-1" onDoubleClick={() => setEditingPath(true)}>
+              {breadcrumbs(path).map((crumb, index) => (
+                <span key={crumb.path} className="flex min-w-0 items-center gap-1">
+                  {index > 0 && <span className="text-text-disabled">/</span>}
+                  <button className={`truncate rounded px-1 py-1 hover:bg-bg-hover ${index === breadcrumbs(path).length - 1 ? "text-text-primary" : "text-text-tertiary"}`} onClick={() => setPath(crumb.path)}>{crumb.label}</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            <button className={`rounded p-1.5 ${view === "list" ? "bg-accent-bg text-accent" : "text-text-tertiary hover:bg-bg-hover"}`} aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><FiList aria-hidden="true" /></button>
+            <button className={`rounded p-1.5 ${view === "icons" ? "bg-accent-bg text-accent" : "text-text-tertiary hover:bg-bg-hover"}`} aria-label="Icon view" aria-pressed={view === "icons"} onClick={() => setView("icons")}><FiGrid aria-hidden="true" /></button>
+            <button className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover" aria-label="More Finder actions" onClick={newFolder}><FiMoreHorizontal aria-hidden="true" /></button>
           </div>
         </div>
-      </div>
+
+        {error && (
+          <div className="flex items-center gap-2 border-l-2 border-status-danger bg-status-danger/10 px-3 py-2 text-xs" role="alert">
+            <div className="min-w-0 flex-1"><p className="font-medium text-text-primary">Couldn't complete that action</p><p className="font-mono text-[11px] text-text-secondary">{error}</p></div>
+            <button className="rounded p-1 text-text-secondary hover:bg-bg-hover" aria-label="Dismiss error" onClick={() => setError(null)}><FiX aria-hidden="true" /></button>
+          </div>
+        )}
+
+        {loadState === "loading" && <div className="space-y-2 p-3" aria-label="Loading folder" aria-busy="true">{Array.from({ length: 5 }, (_, index) => <div key={index} className="h-7 rounded bg-bg-hover/60 animate-pulse" />)}</div>}
+        {loadState === "error" && !entries.length && <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"><FiFolder className="h-9 w-9 text-status-danger" aria-hidden="true" /><p className="font-medium text-text-primary">This folder is unavailable</p><button className="rounded-card bg-bg-hover px-3 py-1.5 text-text-secondary hover:bg-bg-hover/80" onClick={() => setPath(parentPath(path))}>Go to parent folder</button></div>}
+        {loadState === "empty" && <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"><FiFolder className="h-10 w-10 text-text-tertiary" aria-hidden="true" /><p className="font-medium text-text-primary">This folder is empty</p><button className="rounded-card bg-accent px-3 py-1.5 font-medium text-bg-base hover:bg-accent-strong" onClick={newFolder}>New Folder</button></div>}
+        {loadState === "populated" && (view === "list" ? (
+          <div className="min-h-0 flex-1 overflow-auto" role="grid" aria-label="Files">
+            <div className="grid grid-cols-[minmax(0,1fr)_72px_84px_60px] gap-2 border-b border-bg-hover px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+              {(["name", "size", "modified", "kind"] as const).map((key) => <button key={key} className="text-left hover:text-text-primary" onClick={() => toggleSort(key)}>{key}{sortKey === key && (sortAscending ? " ↑" : " ↓")}</button>)}
+            </div>
+            {sortedEntries.map((entry) => <button key={entry.path} className={`grid w-full grid-cols-[minmax(0,1fr)_72px_84px_60px] items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)}>
+              <span className="flex min-w-0 items-center gap-2"><span className="shrink-0">{entryIcon(entry)}</span><span className="truncate text-text-primary">{entry.name}</span>{entry.kind === "symlink" && <span className="text-[10px] text-status-info">↗</span>}</span><span className="text-text-tertiary">{entry.kind === "dir" ? "—" : formatSize(entry.size)}</span><span className="text-text-tertiary">{formatModified(entry.modified)}</span><span className="text-text-tertiary">{entry.kind}</span>
+            </button>)}
+          </div>
+        ) : (
+          <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(92px,1fr))] content-start gap-2 overflow-auto p-3" role="grid" aria-label="Files">
+            {sortedEntries.map((entry) => <button key={entry.path} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-card p-2 text-center hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)}><span className="text-2xl">{entryIcon(entry)}</span><span className="max-w-full truncate text-text-primary">{entry.name}</span></button>)}
+          </div>
+        ))}
+
+        <div className="flex min-h-8 items-center gap-2 border-t border-bg-hover bg-bg-elevated px-2">
+          <button className="rounded p-1 text-text-tertiary hover:bg-bg-hover disabled:opacity-40" aria-label="Rename selected item" disabled={!selected} onClick={() => void rename}><FiMoreHorizontal aria-hidden="true" /></button>
+          <button className="rounded p-1 text-text-tertiary hover:bg-bg-hover disabled:opacity-40" aria-label="Delete selected item" disabled={!selected} onClick={() => void remove}><FiTrash2 aria-hidden="true" /></button>
+          <span className="ml-auto text-[10px] text-text-tertiary">{entries.length} {entries.length === 1 ? "item" : "items"}</span>
+        </div>
+      </section>
+
+      {showPreview && (
+        <aside className="flex w-56 shrink-0 flex-col border-l border-bg-hover bg-bg-overlay/30" aria-label="Quick Look preview">
+          <div className="flex min-h-9 items-center justify-between border-b border-bg-hover px-3"><span className="truncate font-medium text-text-primary">{preview?.entry.name ?? "Quick Look"}</span><button className="rounded p-1 text-text-tertiary hover:bg-bg-hover" aria-label="Close preview" onClick={() => setShowPreview(false)}><FiX aria-hidden="true" /></button></div>
+          {!preview && <div className="flex flex-1 items-center justify-center p-4 text-center text-text-tertiary">Select a file to preview.</div>}
+          {preview && <div className="min-h-0 flex-1 overflow-auto p-3">
+            <div className="mb-3 flex items-center gap-2 text-[11px] text-text-secondary">{entryIcon(preview.entry)}<span>{formatSize(preview.entry.size)} · {preview.entry.kind}</span></div>
+            {preview.error && <div className="rounded-card border-l-2 border-status-warning bg-status-warning/10 p-2 text-[11px] text-text-secondary">{preview.error}</div>}
+            {!preview.error && preview.content !== undefined && <pre className="whitespace-pre-wrap break-words rounded-card bg-bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-secondary">{preview.content}</pre>}
+            {!preview.error && preview.content === undefined && <div className="flex flex-col items-center gap-2 py-8 text-center text-text-tertiary"><FiFile className="h-8 w-8" aria-hidden="true" /><span>Preview not available for this file type.</span></div>}
+          </div>}
+        </aside>
+      )}
     </div>
   );
-}
-function FiTrash2Icon() {
-  return <span className="text-[12px]" aria-hidden="true">🗑</span>;
 }
