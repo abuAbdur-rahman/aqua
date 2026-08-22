@@ -3,6 +3,7 @@ import {
   FiChevronDown,
   FiChevronRight,
   FiCode,
+  FiEdit3,
   FiFile,
   FiFileText,
   FiFolder,
@@ -12,11 +13,13 @@ import {
   FiMoreHorizontal,
   FiRefreshCw,
   FiTrash2,
+  FiTerminal,
   FiX,
 } from "react-icons/fi";
 import {
   ApiError,
   createDirectory,
+  createFile,
   deleteEntry,
   listDirectory,
   readFile,
@@ -24,6 +27,7 @@ import {
   type FsEntry,
 } from "../lib/filesystem";
 import { useFsWatch } from "../lib/useFsWatch";
+import { useWindowStore } from "../windows/store";
 
 type ViewMode = "list" | "icons";
 type LoadState = "loading" | "empty" | "populated" | "error";
@@ -84,6 +88,18 @@ export function FinderPane() {
   const [showPreview, setShowPreview] = useState(false);
   const [editingPath, setEditingPath] = useState(false);
   const [pathInput, setPathInput] = useState(HOME_PATH);
+  const [menu, setMenu] = useState<{ x: number; y: number; entry: FsEntry | null } | null>(null);
+  const openEditor = useWindowStore((state) => state.openEditor);
+  const openTerminal = useWindowStore((state) => state.openApp);
+  const finderPathRequest = useWindowStore((state) => state.finderPathRequest);
+  const clearFinderPathRequest = useWindowStore((state) => state.clearFinderPathRequest);
+
+  useEffect(() => {
+    if (finderPathRequest) {
+      setPath(finderPathRequest);
+      clearFinderPathRequest();
+    }
+  }, [clearFinderPathRequest, finderPathRequest]);
 
   const load = useCallback(async () => {
     setLoadState("loading");
@@ -164,6 +180,23 @@ export function FinderPane() {
     }
   };
 
+  const newFile = async () => {
+    const name = window.prompt("New file name");
+    if (!name?.trim()) return;
+    try {
+      await createFile(`${path.replace(/\/$/, "")}/${name.trim()}`);
+      await load();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Couldn't create file");
+    }
+  };
+
+  const showMenu = (event: React.MouseEvent, entry: FsEntry | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu({ x: event.clientX, y: event.clientY, entry });
+  };
+
   const rename = async () => {
     if (!selected) return;
     const name = window.prompt("Rename", selected.name);
@@ -225,7 +258,7 @@ export function FinderPane() {
         </aside>
       )}
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-w-0 flex-1 flex-col" onContextMenu={(event) => showMenu(event, null)} onClick={() => setMenu(null)}>
         <div className="flex min-h-9 items-center gap-1 border-b border-bg-hover bg-bg-elevated px-2">
           <button className="mr-1 rounded p-1.5 text-text-secondary hover:bg-bg-hover" aria-label={showSidebar ? "Hide sidebar" : "Show sidebar"} onClick={() => setShowSidebar((value) => !value)}>
             <FiChevronDown className={showSidebar ? "" : "-rotate-90"} aria-hidden="true" />
@@ -278,13 +311,13 @@ export function FinderPane() {
             <div className="grid grid-cols-[minmax(0,1fr)_72px_84px_60px] gap-2 border-b border-bg-hover px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
               {(["name", "size", "modified", "kind"] as const).map((key) => <button key={key} className="text-left hover:text-text-primary" onClick={() => toggleSort(key)}>{key}{sortKey === key && (sortAscending ? " ↑" : " ↓")}</button>)}
             </div>
-            {sortedEntries.map((entry) => <button key={entry.path} className={`grid w-full grid-cols-[minmax(0,1fr)_72px_84px_60px] items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)}>
+             {sortedEntries.map((entry) => <button key={entry.path} className={`grid w-full grid-cols-[minmax(0,1fr)_72px_84px_60px] items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)} onContextMenu={(event) => showMenu(event, entry)}>
               <span className="flex min-w-0 items-center gap-2"><span className="shrink-0">{entryIcon(entry)}</span><span className="truncate text-text-primary">{entry.name}</span>{entry.kind === "symlink" && <span className="text-[10px] text-status-info">↗</span>}</span><span className="text-text-tertiary">{entry.kind === "dir" ? "—" : formatSize(entry.size)}</span><span className="text-text-tertiary">{formatModified(entry.modified)}</span><span className="text-text-tertiary">{entry.kind}</span>
             </button>)}
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(92px,1fr))] content-start gap-2 overflow-auto p-3" role="grid" aria-label="Files">
-            {sortedEntries.map((entry) => <button key={entry.path} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-card p-2 text-center hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)}><span className="text-2xl">{entryIcon(entry)}</span><span className="max-w-full truncate text-text-primary">{entry.name}</span></button>)}
+             {sortedEntries.map((entry) => <button key={entry.path} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-card p-2 text-center hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)} onContextMenu={(event) => showMenu(event, entry)}><span className="text-2xl">{entryIcon(entry)}</span><span className="max-w-full truncate text-text-primary">{entry.name}</span></button>)}
           </div>
         ))}
 
@@ -294,6 +327,18 @@ export function FinderPane() {
           <span className="ml-auto text-[10px] text-text-tertiary">{entries.length} {entries.length === 1 ? "item" : "items"}</span>
         </div>
       </section>
+
+      {menu && <div className="fixed z-[100] min-w-44 rounded-card border border-bg-hover bg-bg-elevated p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+        {menu.entry?.kind === "file" && <>
+          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openEditor(menu.entry?.path ?? ""); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Open in Editor</button>
+          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openTerminal(parentPath(menu.entry?.path ?? path)); setMenu(null); }}><FiTerminal aria-hidden="true" /> Open in Terminal</button>
+        </>}
+        {menu.entry?.kind === "dir" && <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { setPath(menu.entry?.path ?? path); setMenu(null); }}><FiFolder aria-hidden="true" /> Open folder</button>}
+        {!menu.entry && <>
+          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFile(); setMenu(null); }}><FiFile aria-hidden="true" /> New file</button>
+          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFolder(); setMenu(null); }}><FiFolder aria-hidden="true" /> New folder</button>
+        </>}
+      </div>}
 
       {showPreview && (
         <aside className="flex w-56 shrink-0 flex-col border-l border-bg-hover bg-bg-overlay/30" aria-label="Quick Look preview">

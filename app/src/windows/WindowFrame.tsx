@@ -230,8 +230,8 @@ export function WindowFrame({ win, containerRef }: Props) {
       <div className="flex-1 overflow-auto bg-bg-surface">
         {win.appId === "finder" && <FinderPane />}
         {win.appId === "terminal" && <TerminalPane />}
-        {win.appId === "activity" && <ActivityPane state="populated" />}
-        {win.appId === "editor" && <EditorPane state="populated" />}
+        {win.appId === "activity" && <ActivityPane />}
+        {win.appId === "editor" && <EditorPane />}
         {win.appId === "spotlight" && <SpotlightPane open />}
         {!["finder", "terminal", "activity", "editor", "spotlight"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />

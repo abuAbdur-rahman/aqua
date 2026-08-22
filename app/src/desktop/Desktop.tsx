@@ -2,9 +2,23 @@ import { MenuBar } from "./MenuBar";
 import { Dock } from "./Dock";
 import { WindowHost } from "../windows/WindowHost";
 import { useDaemonConnection } from "../lib/useDaemon";
+import { useWindowStore } from "../windows/store";
 
 export function Desktop() {
   const { state, version, wsConnected } = useDaemonConnection();
+  const openEditor = useWindowStore((store) => store.openEditor);
+  const openFinder = useWindowStore((store) => store.openFinder);
+
+  useEffect(() => {
+    const onEditor = (event: Event) => openEditor((event as CustomEvent<string>).detail);
+    const onFinder = (event: Event) => openFinder((event as CustomEvent<string>).detail);
+    window.addEventListener("aqua:open-editor", onEditor);
+    window.addEventListener("aqua:open-finder", onFinder);
+    return () => {
+      window.removeEventListener("aqua:open-editor", onEditor);
+      window.removeEventListener("aqua:open-finder", onFinder);
+    };
+  }, [openEditor, openFinder]);
 
   return (
     <div className="fixed inset-0 m-0 p-0 bg-bg-base font-sans overflow-hidden select-none">
@@ -29,3 +43,4 @@ export function Desktop() {
     </div>
   );
 }
+import { useEffect } from "react";

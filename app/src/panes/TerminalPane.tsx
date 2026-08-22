@@ -2,8 +2,9 @@ import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
-import { FiPlus, FiX } from "react-icons/fi";
+import { FiClipboard, FiPlus, FiX } from "react-icons/fi";
 import { createResizeScheduler, openPtySession, type PtySession } from "../lib/pty";
+import { useWindowStore } from "../windows/store";
 
 type TabState = "spawning" | "connected" | "exited" | "disconnected";
 
@@ -19,6 +20,8 @@ interface TerminalSurfaceProps {
   tab: TerminalTab;
   active: boolean;
   fontSize: number;
+  cwd?: string;
+  terminalsRef: React.MutableRefObject<Map<string, Terminal>>;
   onStateChange: (state: TabState, exitCode?: number) => void;
 }
 
@@ -50,7 +53,7 @@ function terminalTheme() {
   };
 }
 
-function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfaceProps) {
+function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChange }: TerminalSurfaceProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -65,7 +68,7 @@ function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfa
     const terminal = new Terminal({
       convertEol: true,
       cursorStyle: "block",
-      fontFamily: "JetBrains Mono, ui-monospace, monospace",
+      fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace',
       fontSize,
       theme: terminalTheme(),
       scrollback: 5000,
@@ -75,8 +78,21 @@ function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfa
     fitRef.current = fit;
     terminal.open(host);
     terminalRef.current = terminal;
+    terminalsRef.current.set(tab.id, terminal);
     const input = terminal.onData((data) => sessionRef.current?.sendInput(new TextEncoder().encode(data)));
     const binaryInput = terminal.onBinary((data) => sessionRef.current?.sendInput(Uint8Array.from(data, (char) => char.charCodeAt(0))));
+    const osc = terminal.parser.registerOscHandler(777, (data) => {
+      const [command, encodedPath] = data.split(";", 2);
+      const path = encodedPath ? decodeURIComponent(encodedPath) : "";
+      if ((command === "edit" || command === "finder") && path) {
+        window.dispatchEvent(new CustomEvent(command === "edit" ? "aqua:open-editor" : "aqua:open-finder", { detail: path }));
+      }
+      return true;
+    });
+    const selectionCopy = terminal.onSelectionChange(() => {
+      const text = terminal.getSelection();
+      if (text) navigator.clipboard?.writeText(text).catch(() => {});
+    });
 
     const resize = () => {
       if (!host.clientWidth || !host.clientHeight) return;
@@ -92,6 +108,7 @@ function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfa
     void openPtySession({
       cols: terminal.cols || 80,
       rows: terminal.rows || 24,
+      ...(cwd ? { cwd } : {}),
       onOutput: (data) => terminal.write(data),
       onExit: ({ code }) => {
         terminal.writeln(`\r\n[Process exited with code ${code}]`);
@@ -105,6 +122,8 @@ function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfa
       }
       sessionRef.current = session;
       onStateChangeRef.current("connected");
+      session.sendInput(new TextEncoder().encode("stty -echo\n"));
+      session.sendInput(new TextEncoder().encode("function aqua(){ case \"$1\" in edit|finder) local p=\"$2\"; [[ \"$p\" != /* ]] && p=\"$PWD/${p#./}\"; printf '\\033]777;%s;%s\\007' \"$1\" \"$p\" ;; *) echo 'Usage: aqua edit <path> | aqua finder <path>' ;; esac; }; export -f aqua; clear; stty echo\n"));
       resize();
     }).catch(() => {
       if (!cancelled) onStateChangeRef.current("disconnected");
@@ -119,8 +138,11 @@ function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfa
       sessionRef.current = null;
       input.dispose();
       binaryInput.dispose();
+      osc.dispose();
+      selectionCopy.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      terminalsRef.current.delete(tab.id);
       fitRef.current = null;
     };
   }, []);
@@ -157,6 +179,9 @@ export function TerminalPane() {
   const [tabs, setTabs] = useState<TerminalTab[]>(() => [newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [fontSize, setFontSize] = useState(12);
+  const terminalsRef = useRef<Map<string, Terminal>>(new Map());
+  const terminalPathRequest = useWindowStore((state) => state.terminalPathRequest);
+  const clearTerminalPathRequest = useWindowStore((state) => state.clearTerminalPathRequest);
 
   const updateTab = (id: string, state: TabState, exitCode?: number) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, state, ...(state === "spawning" ? { restartKey: tab.restartKey + 1 } : {}), ...(exitCode === undefined ? {} : { exitCode }) } : tab));
@@ -170,36 +195,52 @@ export function TerminalPane() {
     if (id === activeId) setActiveId(next[Math.max(0, index - 1)].id);
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
-      if (event.key === "+" || event.key === "=") {
-        event.preventDefault();
-        setFontSize((size) => Math.min(24, size + 1));
-      } else if (event.key === "-") {
-        event.preventDefault();
-        setFontSize((size) => Math.max(8, size - 1));
+   useEffect(() => {
+     const onKeyDown = (event: KeyboardEvent) => {
+       if (!event.ctrlKey || event.altKey || event.metaKey) return;
+       if (event.key === "+" || event.key === "=") {
+         event.preventDefault();
+         setFontSize((size) => Math.min(24, size + 1));
+       } else if (event.key === "-") {
+         event.preventDefault();
+         setFontSize((size) => Math.max(8, size - 1));
+       } else if (event.key.toLowerCase() === "c" && event.shiftKey) {
+        const terminal = terminalsRef.current.get(activeId);
+        const text = terminal?.getSelection();
+        if (text) {
+          event.preventDefault();
+          navigator.clipboard?.writeText(text).catch(() => {});
+        }
       }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+     };
+     window.addEventListener("keydown", onKeyDown);
+     return () => window.removeEventListener("keydown", onKeyDown);
+   }, [activeId]);
+
+  useEffect(() => {
+    if (terminalPathRequest) clearTerminalPathRequest();
+  }, [clearTerminalPathRequest, terminalPathRequest]);
+
+  const copySelection = () => {
+    const terminal = terminalsRef.current.get(activeId);
+    const text = terminal?.getSelection();
+    if (text) navigator.clipboard?.writeText(text).catch(() => {});
+  };
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-bg-surface font-mono text-xs">
-      {tabs.length > 1 && (
-        <div className="z-10 flex h-7 shrink-0 items-center gap-1 border-b border-bg-hover bg-bg-elevated px-1" role="tablist" aria-label="Terminal tabs">
-          {tabs.map((tab) => (
-            <div key={tab.id} className={`flex h-6 min-w-0 items-center rounded px-2 ${tab.id === activeId ? "bg-bg-surface text-text-primary" : "text-text-secondary"}`}>
-              <button role="tab" aria-selected={tab.id === activeId} className="min-w-0 truncate" onClick={() => setActiveId(tab.id)}>{tab.label}</button>
-              <button className="ml-1 shrink-0 rounded p-0.5 text-text-tertiary hover:bg-bg-hover hover:text-text-primary" aria-label={`Close ${tab.label} tab`} onClick={() => closeTab(tab.id)}><FiX aria-hidden="true" /></button>
-            </div>
-          ))}
-          <button className="ml-1 rounded p-1 text-text-secondary hover:bg-bg-hover hover:text-text-primary" aria-label="New terminal tab" onClick={() => { const tab = newTab(); setTabs((current) => [...current, tab]); setActiveId(tab.id); }}><FiPlus aria-hidden="true" /></button>
-        </div>
-      )}
+      <div className="z-10 flex h-7 shrink-0 items-center gap-1 border-b border-bg-hover bg-bg-elevated px-1" role="tablist" aria-label="Terminal tabs">
+        {tabs.map((tab) => (
+          <div key={tab.id} className={`flex h-6 min-w-0 items-center rounded px-2 ${tab.id === activeId ? "bg-bg-surface text-text-primary" : "text-text-secondary"}`}>
+            <button role="tab" aria-selected={tab.id === activeId} className="min-w-0 truncate" onClick={() => setActiveId(tab.id)}>{tab.label}</button>
+            {tabs.length > 1 && <button className="ml-1 shrink-0 rounded p-0.5 text-text-tertiary hover:bg-bg-hover hover:text-text-primary" aria-label={`Close ${tab.label} tab`} onClick={() => closeTab(tab.id)}><FiX aria-hidden="true" /></button>}
+          </div>
+        ))}
+        {tabs.length > 1 && <button className="ml-1 rounded p-1 text-text-secondary hover:bg-bg-hover hover:text-text-primary" aria-label="New terminal tab" onClick={() => { const tab = newTab(); setTabs((current) => [...current, tab]); setActiveId(tab.id); }}><FiPlus aria-hidden="true" /></button>}
+        <button className="ml-auto rounded p-1 text-text-tertiary hover:bg-bg-hover hover:text-text-primary" aria-label="Copy selection" onClick={copySelection}><FiClipboard aria-hidden="true" /></button>
+      </div>
       <div className="relative min-h-0 flex-1">
-        {tabs.map((tab) => <TerminalSurface key={`${tab.id}-${tab.restartKey}`} tab={tab} active={tab.id === activeId} fontSize={fontSize} onStateChange={(state, code) => updateTab(tab.id, state, code)} />)}
+         {tabs.map((tab) => <TerminalSurface key={`${tab.id}-${tab.restartKey}`} tab={tab} active={tab.id === activeId} fontSize={fontSize} cwd={tab.id === tabs[0].id ? terminalPathRequest ?? undefined : undefined} terminalsRef={terminalsRef} onStateChange={(state, code) => updateTab(tab.id, state, code)} />)}
       </div>
     </div>
   );
