@@ -28,6 +28,15 @@ interface WindowState {
   updateBounds: (id: string, b: Partial<Pick<WindowRecord, "x" | "y" | "w" | "h">>) => void;
   toggleMaximize: (id: string, container: { w: number; h: number }) => void;
   bringToFront: (id: string) => void;
+  editorPathRequest: string | null;
+  finderPathRequest: string | null;
+  terminalPathRequest: string | null;
+  openEditor: (path: string) => void;
+  openFinder: (path: string) => void;
+  openTerminal: (path: string) => void;
+  clearEditorPathRequest: () => void;
+  clearFinderPathRequest: () => void;
+  clearTerminalPathRequest: () => void;
 }
 
 let idSeq = 1;
@@ -39,6 +48,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   windows: [],
   nextZ: 10,
   focusedId: null,
+  editorPathRequest: null,
+  finderPathRequest: null,
+  terminalPathRequest: null,
 
   openApp: (appId) => {
     const manifest = appManifest[appId];
@@ -87,6 +99,25 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       focusedId: win.id,
     });
   },
+
+  openEditor: (path) => {
+    set({ editorPathRequest: path });
+    get().openApp("editor");
+  },
+
+  openFinder: (path) => {
+    set({ finderPathRequest: path });
+    get().openApp("finder");
+  },
+
+  openTerminal: (path) => {
+    set({ terminalPathRequest: path });
+    get().openApp("terminal");
+  },
+
+  clearEditorPathRequest: () => set({ editorPathRequest: null }),
+  clearFinderPathRequest: () => set({ finderPathRequest: null }),
+  clearTerminalPathRequest: () => set({ terminalPathRequest: null }),
 
   close: (id) =>
     set((s) => {
