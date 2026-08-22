@@ -1,32 +1,178 @@
-type State = "spawning" | "connected" | "exited" | "disconnected";
-export function TerminalPane({ state = "connected" as State }) {
-  if (state === "spawning") {
-    return <div className="flex h-full items-center justify-center p-4 text-xs text-text-tertiary">Starting shell…</div>;
-  }
-  if (state === "exited") {
-    return (
-      <div className="flex h-full flex-col bg-bg-surface p-2 font-mono text-xs">
-        <div className="text-text-secondary">abdul@wsl:~/projects/aqua$ npm run dev</div>
-        <div className="mt-2 text-text-tertiary">[Process exited with code <span className="text-status-danger">1</span>]</div>
-        <button className="mt-2 self-start text-accent hover:text-accent-strong">Restart</button>
-      </div>
-    );
-  }
-  if (state === "disconnected") {
-    return (
-      <div className="relative flex h-full bg-bg-surface p-2 font-mono text-xs">
-        <div className="opacity-60">abdul@wsl:~/projects/aqua$ ls</div>
-        <div className="absolute inset-0 flex items-center justify-center bg-bg-overlay/60 text-xs text-text-secondary">Connection lost — reconnecting…</div>
-      </div>
-    );
-  }
-  // tab strip hidden when single tab per spec; show body with 8px padding
+import "@xterm/xterm/css/xterm.css";
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal } from "@xterm/xterm";
+import { useEffect, useRef, useState } from "react";
+import { FiPlus, FiX } from "react-icons/fi";
+import { createResizeScheduler, openPtySession, type PtySession } from "../lib/pty";
+
+type TabState = "spawning" | "connected" | "exited" | "disconnected";
+
+interface TerminalTab {
+  id: string;
+  label: string;
+  state: TabState;
+  exitCode?: number;
+  restartKey: number;
+}
+
+interface TerminalSurfaceProps {
+  tab: TerminalTab;
+  active: boolean;
+  onStateChange: (state: TabState, exitCode?: number) => void;
+}
+
+function terminalTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name: string) => styles.getPropertyValue(name).trim();
+  return {
+    background: token("--bg-surface"),
+    foreground: token("--text-primary"),
+    cursor: token("--accent"),
+    cursorAccent: token("--bg-surface"),
+    selectionBackground: token("--accent-bg"),
+    black: token("--bg-base"),
+    red: token("--status-danger"),
+    green: token("--status-success"),
+    yellow: token("--status-warning"),
+    blue: token("--status-info"),
+    magenta: token("--accent-strong"),
+    cyan: token("--accent"),
+    white: token("--text-primary"),
+    brightBlack: token("--text-tertiary"),
+    brightRed: token("--status-danger"),
+    brightGreen: token("--status-success"),
+    brightYellow: token("--status-warning"),
+    brightBlue: token("--status-info"),
+    brightMagenta: token("--accent-strong"),
+    brightCyan: token("--accent-strong"),
+    brightWhite: token("--text-primary"),
+  };
+}
+
+function TerminalSurface({ tab, active, onStateChange }: TerminalSurfaceProps) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const sessionRef = useRef<PtySession | null>(null);
+  const schedulerRef = useRef<ReturnType<typeof createResizeScheduler> | null>(null);
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const terminal = new Terminal({
+      convertEol: true,
+      cursorStyle: "block",
+      fontFamily: "JetBrains Mono, ui-monospace, monospace",
+      fontSize: 12,
+      theme: terminalTheme(),
+      scrollback: 5000,
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(host);
+    terminalRef.current = terminal;
+    const input = terminal.onData((data) => sessionRef.current?.sendInput(new TextEncoder().encode(data)));
+    const binaryInput = terminal.onBinary((data) => sessionRef.current?.sendInput(Uint8Array.from(data, (char) => char.charCodeAt(0))));
+
+    const resize = () => {
+      if (!host.clientWidth || !host.clientHeight) return;
+      fit.fit();
+      schedulerRef.current?.schedule(terminal.cols, terminal.rows);
+    };
+    schedulerRef.current = createResizeScheduler((cols, rows) => sessionRef.current?.resize(cols, rows));
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+    resize();
+
+    let cancelled = false;
+    void openPtySession({
+      cols: terminal.cols || 80,
+      rows: terminal.rows || 24,
+      onOutput: (data) => terminal.write(data),
+      onExit: ({ code }) => {
+        terminal.writeln(`\r\n[Process exited with code ${code}]`);
+        onStateChangeRef.current("exited", code);
+      },
+      onDisconnect: () => onStateChangeRef.current("disconnected"),
+    }).then((session) => {
+      if (cancelled) {
+        session.dispose();
+        return;
+      }
+      sessionRef.current = session;
+      onStateChangeRef.current("connected");
+      resize();
+    }).catch(() => {
+      if (!cancelled) onStateChangeRef.current("disconnected");
+    });
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      schedulerRef.current?.dispose();
+      schedulerRef.current = null;
+      sessionRef.current?.dispose();
+      sessionRef.current = null;
+      input.dispose();
+      binaryInput.dispose();
+      terminal.dispose();
+      terminalRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal) terminal.options.cursorStyle = active ? "block" : "underline";
+  }, [active]);
+
   return (
-    <div className="flex h-full flex-col bg-bg-surface">
-      <div className="flex-1 p-2 font-mono text-xs leading-relaxed" style={{ padding: 8 }}>
-        <div className="text-text-secondary">abdul@wsl:~/projects/aqua$ ls</div>
-        <div className="text-text-primary">AGENTS.md  CONTRACT.md  DESIGN.md  README.md</div>
-        <div className="text-text-primary">abdul@wsl:~/projects/aqua$ <span className="inline-block h-3 w-2 bg-accent align-middle animate-pulse" aria-hidden="true" /></div>
+    <div className={`absolute inset-0 p-2 ${active ? "block" : "hidden"}`} aria-hidden={!active}>
+      <div ref={hostRef} className="h-full w-full" />
+      {tab.state === "spawning" && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-text-tertiary">Starting shell...</div>}
+      {tab.state === "disconnected" && <div className="absolute inset-0 flex items-center justify-center bg-bg-overlay/60 text-xs text-text-secondary">Connection lost - reconnecting...</div>}
+      {tab.state === "exited" && <button className="absolute bottom-3 left-3 text-xs text-accent hover:text-accent-strong" onClick={() => onStateChange("spawning")}>Restart</button>}
+    </div>
+  );
+}
+
+let tabSequence = 1;
+function newTab(): TerminalTab {
+  const id = `terminal-tab-${tabSequence++}`;
+  return { id, label: "bash", state: "spawning", restartKey: 0 };
+}
+
+export function TerminalPane() {
+  const [tabs, setTabs] = useState<TerminalTab[]>(() => [newTab()]);
+  const [activeId, setActiveId] = useState(tabs[0].id);
+
+  const updateTab = (id: string, state: TabState, exitCode?: number) => {
+    setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, state, ...(state === "spawning" ? { restartKey: tab.restartKey + 1 } : {}), ...(exitCode === undefined ? {} : { exitCode }) } : tab));
+  };
+
+  const closeTab = (id: string) => {
+    if (tabs.length === 1) return;
+    const index = tabs.findIndex((tab) => tab.id === id);
+    const next = tabs.filter((tab) => tab.id !== id);
+    setTabs(next);
+    if (id === activeId) setActiveId(next[Math.max(0, index - 1)].id);
+  };
+
+  return (
+    <div className="relative flex h-full min-h-0 flex-col bg-bg-surface font-mono text-xs">
+      {tabs.length > 1 && (
+        <div className="z-10 flex h-7 shrink-0 items-center gap-1 border-b border-bg-hover bg-bg-elevated px-1" role="tablist" aria-label="Terminal tabs">
+          {tabs.map((tab) => (
+            <div key={tab.id} className={`flex h-6 min-w-0 items-center rounded px-2 ${tab.id === activeId ? "bg-bg-surface text-text-primary" : "text-text-secondary"}`}>
+              <button role="tab" aria-selected={tab.id === activeId} className="min-w-0 truncate" onClick={() => setActiveId(tab.id)}>{tab.label}</button>
+              <button className="ml-1 shrink-0 rounded p-0.5 text-text-tertiary hover:bg-bg-hover hover:text-text-primary" aria-label={`Close ${tab.label} tab`} onClick={() => closeTab(tab.id)}><FiX aria-hidden="true" /></button>
+            </div>
+          ))}
+          <button className="ml-1 rounded p-1 text-text-secondary hover:bg-bg-hover hover:text-text-primary" aria-label="New terminal tab" onClick={() => { const tab = newTab(); setTabs((current) => [...current, tab]); setActiveId(tab.id); }}><FiPlus aria-hidden="true" /></button>
+        </div>
+      )}
+      <div className="relative min-h-0 flex-1">
+        {tabs.map((tab) => <TerminalSurface key={`${tab.id}-${tab.restartKey}`} tab={tab} active={tab.id === activeId} onStateChange={(state, code) => updateTab(tab.id, state, code)} />)}
       </div>
     </div>
   );
