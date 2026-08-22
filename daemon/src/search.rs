@@ -398,10 +398,8 @@ fn text_value(document: &TantivyDocument, field: Field) -> Option<String> {
 fn make_snippet(content: &str, query: &str) -> Option<String> {
     let lower = content.to_lowercase();
     let position = lower.find(&query.to_lowercase())?;
-    let before = content[..position]
-        .chars()
-        .count()
-        .saturating_sub(MAX_SNIPPET_CHARS / 3);
+    let char_position = content[..position].chars().count();
+    let before = char_position.saturating_sub(MAX_SNIPPET_CHARS / 3);
     Some(
         content
             .chars()
@@ -500,4 +498,168 @@ fn convert_units(input: &str) -> Option<SearchActionHit> {
 fn format_number(value: f64) -> String {
     let value = format!("{value:.6}");
     value.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn matching_paths(core: &SearchCore, query: &str) -> Vec<String> {
+        let searcher = core.reader.searcher();
+        let parser = QueryParser::for_index(&core.index, vec![core.name, core.content]);
+        let query = parser.parse_query(query).expect("test query should parse");
+        searcher
+            .search(&query, &TopDocs::with_limit(MAX_RESULTS))
+            .expect("test search should succeed")
+            .into_iter()
+            .map(|(_, address)| {
+                let document: TantivyDocument = searcher.doc(address).expect("document exists");
+                text_value(&document, core.path).expect("path is stored")
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn startup_index_searches_names_and_text_and_excludes_cache_paths() {
+        let directory = tempdir().expect("temporary directory should be created");
+        fs::create_dir(directory.path().join(".git")).expect("excluded directory should exist");
+        fs::create_dir(directory.path().join("Desktop")).expect("search root should exist");
+        fs::write(directory.path().join("visible.txt"), "meeting notes").expect("file writes");
+        fs::write(directory.path().join("Desktop/project.md"), "meeting plan")
+            .expect("file writes");
+        fs::write(directory.path().join(".git/hidden.txt"), "meeting secret").expect("file writes");
+
+        let core = Arc::new(Mutex::new(
+            SearchCore::new(directory.path().to_path_buf()).unwrap(),
+        ));
+        let core_for_index = Arc::clone(&core);
+        let roots = search_roots(directory.path());
+        tokio::task::spawn_blocking(move || {
+            build_initial_index(&core_for_index, &roots, &AtomicBool::new(false))
+        })
+        .await
+        .expect("indexing task should finish")
+        .expect("indexing should succeed");
+        let core = core.lock().await;
+        let paths = matching_paths(&core, "meeting");
+
+        assert!(paths.iter().any(|path| path.ends_with("visible.txt")));
+        assert!(paths.iter().any(|path| path.ends_with("project.md")));
+        assert!(!paths.iter().any(|path| path.contains(".git")));
+    }
+
+    #[tokio::test]
+    async fn incremental_events_update_modify_rename_and_delete() {
+        let directory = tempdir().expect("temporary directory should be created");
+        let path = directory.path().join("item.txt");
+        fs::write(&path, "old value").expect("file writes");
+        let core = Arc::new(Mutex::new(
+            SearchCore::new(directory.path().to_path_buf()).unwrap(),
+        ));
+        let core_for_index = Arc::clone(&core);
+        let index_root = directory.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            build_initial_index(&core_for_index, &[index_root], &AtomicBool::new(false))
+        })
+        .await
+        .expect("indexing task should finish")
+        .expect("indexing should succeed");
+
+        fs::write(&path, "new value").expect("file writes");
+        apply_events(
+            &core,
+            vec![Ok(Event::new(EventKind::Modify(
+                notify::event::ModifyKind::Any,
+            ))
+            .add_path(path.clone()))],
+        )
+        .await;
+        {
+            let core = core.lock().await;
+            assert!(
+                matching_paths(&core, "new")
+                    .iter()
+                    .any(|item| item.ends_with("item.txt"))
+            );
+            assert!(matching_paths(&core, "old").is_empty());
+        }
+
+        let renamed = directory.path().join("renamed.txt");
+        fs::rename(&path, &renamed).expect("file rename");
+        apply_events(
+            &core,
+            vec![
+                Ok(Event::new(EventKind::Remove(notify::event::RemoveKind::Any)).add_path(path)),
+                Ok(
+                    Event::new(EventKind::Create(notify::event::CreateKind::Any))
+                        .add_path(renamed.clone()),
+                ),
+            ],
+        )
+        .await;
+        {
+            let core = core.lock().await;
+            let paths = matching_paths(&core, "new");
+            assert!(!paths.iter().any(|item| item.ends_with("item.txt")));
+            assert!(paths.iter().any(|item| item.ends_with("renamed.txt")));
+        }
+
+        fs::remove_file(&renamed).expect("file delete");
+        apply_events(
+            &core,
+            vec![Ok(Event::new(EventKind::Remove(
+                notify::event::RemoveKind::Any,
+            ))
+            .add_path(renamed))],
+        )
+        .await;
+        let core = core.lock().await;
+        assert!(matching_paths(&core, "new").is_empty());
+    }
+
+    #[tokio::test]
+    async fn discarded_in_memory_index_recovers_by_reindexing_files() {
+        let directory = tempdir().expect("temporary directory should be created");
+        fs::write(directory.path().join("recover.txt"), "recoverable").expect("file writes");
+        let initial = SearchCore::new(directory.path().to_path_buf()).unwrap();
+        drop(initial);
+        let core = Arc::new(Mutex::new(
+            SearchCore::new(directory.path().to_path_buf()).unwrap(),
+        ));
+        let core_for_index = Arc::clone(&core);
+        tokio::task::spawn_blocking(move || {
+            build_initial_index(
+                &core_for_index,
+                &[directory.path().to_path_buf()],
+                &AtomicBool::new(false),
+            )
+        })
+        .await
+        .expect("indexing task should finish")
+        .expect("reindex should succeed");
+        let core = core.lock().await;
+        assert!(
+            matching_paths(&core, "recoverable")
+                .iter()
+                .any(|path| path.ends_with("recover.txt"))
+        );
+    }
+
+    #[test]
+    fn snippets_support_non_ascii_matches() {
+        assert_eq!(
+            make_snippet("café résumé", "résumé"),
+            Some("café résumé".to_owned())
+        );
+    }
+
+    #[test]
+    fn quick_actions_cover_calculation_and_unit_conversion() {
+        assert_eq!(calculate("12 + 30").unwrap().result, "42");
+        assert_eq!(convert_units("10 km to mi").unwrap().kind, "unitConvert");
+        assert!(calculate("10 / 0").is_none());
+        assert!(convert_units("10 meters to miles").is_none());
+    }
 }
