@@ -16,7 +16,7 @@ Full detail lives in four companion docs:
 - [`CONTRACT.md`](./CONTRACT.md) — exact request/response shapes for every call between them
 - [`DESIGN.md`](./DESIGN.md) — dark-mode-only color tokens, chrome dimensions, motion timing
 
-This README is the entry point: what it is, how the pieces fit, and where to start.
+This README is the entry point: what it is, how the pieces fit together, how the repository is validated, and where the current work stands.
 
 ## How it fits together
 
@@ -74,31 +74,38 @@ Windows (NTFS):  C:\Users\abdul\projects\aqua-app\  → build/run app/ from here
 
 Git is the sync layer between the two clones, not a shared mount — push after finishing a piece on one side, pull before starting the matching piece on the other. Maps directly onto the alternating build order in "Where to start" below. `.gitattributes` at repo root should force `* text=auto eol=lf` so files don't show as dirty purely from crossing OSes; `target/`, `node_modules/`, and `dist/` stay gitignored as usual on both sides.
 
-## Where to start
+## Repository workflow
 
-Build order respects the one real dependency: **the app can't do anything until the daemon exists and responds to a health check.** After that, alternate — build a daemon endpoint, then the UI that consumes it — rather than finishing either side end-to-end first.
+The repository uses `master` as its default branch. Direct pushes are protected by the `Protect master` GitHub ruleset: pull requests, one approving review, resolved review threads, and passing `Daemon checks` and `App checks` are required. The repository owner may bypass these requirements for deliberate administrative changes. Force-pushes and branch deletion are blocked.
 
-- [ ] **Backend Phase 0** – `cargo new daemon` inside `daemon/`, `/api/health` + WS echo, confirm reachable from Windows at `http://localhost:61234`
-- [ ] **App Phase 0** — Tauri scaffold, spawn/health-check the daemon, frameless window + empty Dock/MenuBar (per `DESIGN.md`), confirm WebView → daemon WS round-trip
-- [ ] **App Phase 1** — Window manager core (drag/resize/focus/minimize, single Space)
-- [ ] **Backend Phase 1** — Finder backend (CRUD + fs-watch)
-- [ ] **App Phase 2** — Finder UI
-- [ ] **App Phase 5** — Editor UI (Monaco) — only needs fs/read+write from Backend Phase 1
-- [ ] **Backend Phase 2** — Terminal backend (pty)
-- [ ] **App Phase 3** — Terminal UI
-- [ ] **Backend Phase 3** — Activity Monitor backend
-- [ ] **App Phase 4** — Activity Monitor UI
-- [ ] **Backend Phase 4** — Spotlight backend (tantivy index + search)
-- [ ] **App Phase 6** — Spotlight UI + global hotkey
-- [ ] **App Phase 7** — Spaces
-- [ ] **Backend Phase 5** — Persistence (SQLite layout store)
-- [ ] **App Phase 8** — Polish (persistence wiring, menu bar content, dock animation, tray menu)
-- [ ] **Backend Phase 6** — Hardening (path validation audit, Origin checks)
+CI is defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) and runs on pushes and pull requests:
 
-### Right now
+- Daemon: `cargo fmt --check`, Clippy with `-D warnings`, and all Rust tests on Ubuntu.
+- App: `pnpm test`, `pnpm build`, and Tauri host `cargo check` on Windows.
+- App CI uses Node 24 and pnpm 11.6.0.
 
-```
-cargo new daemon
-```
+Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a change. The two workstreams remain independently buildable: app changes belong under `app/`, daemon changes belong under `daemon/`, and shared contract changes require coordination.
 
-inside WSL. Stand up `GET /api/health` and a `/ws/echo` route, confirm you can hit `http://localhost:61234/api/health` from a Windows browser or `curl.exe`. That's the one thing every other phase, in every doc, depends on.
+## Current status
+
+Backend Phases 0–3 are complete and verified. Backend Phase 4 – Spotlight search – is complete and pushed, including bounded Tantivy indexing, filename/content search, app metadata, calculator and unit-conversion actions, debounced incremental updates, in-memory index recovery, and focused tests.
+
+The next active work is **App Phase 6 – Spotlight UI and global hotkey**. The app should consume `GET /api/search?q=` using the shapes in [`CONTRACT.md`](./CONTRACT.md), follow [`app/Phases/6.md`](./app/Phases/6.md), and preserve the existing app ownership boundary. Windows-to-WSL reachability for the new Spotlight path still needs verification from the native Windows app environment.
+
+Backend Phase 5 persistence and Backend Phase 6 hardening remain future work.
+
+## Build order
+
+Build backend capabilities before the UI that consumes them. The current handoff is Backend Phase 4 complete → App Phase 6 Spotlight UI.
+
+- [x] Backend Phases 0–3 – foundation, Finder, Terminal, Activity Monitor
+- [x] Backend Phase 4 – Spotlight search backend
+- [ ] App Phase 6 – Spotlight UI and global hotkey
+- [ ] App Phase 7 – Spaces
+- [ ] Backend Phase 5 – Persistence
+- [ ] App Phase 8 – Polish and persistence wiring
+- [ ] Backend Phase 6 – Hardening audit
+
+### Windows handoff
+
+Run the app from a Windows-native checkout and verify that the Tauri host starts the daemon and that the WebView can reach `http://localhost:61234/api/search?q=`. Do not infer Windows reachability from WSL-only tests.
