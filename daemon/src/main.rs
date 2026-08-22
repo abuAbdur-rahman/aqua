@@ -1,4 +1,4 @@
-use aqua_daemon::{daemon_addr, router_with_shutdown};
+use aqua_daemon::{daemon_addr, router};
 use tokio::{net::TcpListener, signal};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -18,12 +18,9 @@ async fn serve() -> Result<(), std::io::Error> {
     let listener = TcpListener::bind(address).await?;
     info!(%address, "Aqua daemon listening");
 
-    let (router, shutdown) = router_with_shutdown();
-    axum::serve(listener, router)
+    axum::serve(listener, router())
         .with_graceful_shutdown(shutdown_signal())
-        .await?;
-    shutdown.shutdown();
-    Ok(())
+        .await
 }
 
 async fn shutdown_signal() {
