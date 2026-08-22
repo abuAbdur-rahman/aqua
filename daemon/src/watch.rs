@@ -128,7 +128,7 @@ async fn apply_command(
                 let watched_path =
                     PathBuf::from(format!("/proc/self/fd/{}", watch_handle.as_raw_fd()));
                 watcher
-                    .watch(&watched_path, RecursiveMode::Recursive)
+                    .watch(&watched_path, RecursiveMode::NonRecursive)
                     .map_err(ApiError::from_notify)?;
                 entry.insert(WatchSubscription {
                     _handle: watch_handle,
