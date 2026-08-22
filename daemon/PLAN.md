@@ -163,3 +163,75 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 ## 12. Immediate next step
 
 `cargo new daemon` inside WSL. Stand up `GET /api/health` and a `/ws/echo` route. Confirm it's reachable from Windows at `http://localhost:61234/api/health` before writing any real fs/pty/sysmon logic – that round-trip is the foundation everything else builds on.
+
+## 13. V2 additions
+
+### Scope
+
+| Area | Decision |
+|---|---|
+| Elevation | In-memory sudo-validated timestamp cache gating specific filesystem operations |
+| Wallpaper storage | Custom uploads only; full-resolution and thumbnail files tracked in SQLite |
+
+### Module layout
+
+```text
+daemon/src/
+  system/mod.rs       # POST /api/system/elevate and in-memory cache
+  wallpaper/mod.rs    # wallpaper state, upload, delete, and asset handlers
+  wallpaper/thumbnail.rs
+```
+
+### Crates
+
+| Crate | Purpose |
+|---|---|
+| `image` | Thumbnail generation for wallpaper uploads |
+
+### API
+
+| Path | Type | Purpose |
+|---|---|---|
+| `POST /api/system/elevate` | REST | Validate sudo password and cache elevation |
+| `GET /api/wallpaper` | REST | Current selection and custom wallpaper list |
+| `PUT /api/wallpaper` | REST | Set current selection |
+| `POST /api/wallpaper/upload` | REST | Store an image and generate its thumbnail |
+| `DELETE /api/wallpaper/:id` | REST | Remove a custom wallpaper |
+| `GET /api/wallpaper/asset/:id` and `/thumb` | REST | Serve stored image bytes |
+
+`fs/op` returns `needsElevation: true` for plausible permission failures. An `elevated: true` retry is accepted only while the in-memory elevation timestamp remains valid; expired elevation requires a fresh password prompt.
+
+### Persistence
+
+```sql
+CREATE TABLE wallpapers (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  path TEXT NOT NULL,
+  thumb_path TEXT NOT NULL,
+  added_at TIMESTAMP
+);
+```
+
+The current selection reuses `prefs` with key `wallpaper.current`.
+
+### Security
+
+- Never log the elevation password.
+- Keep elevation state only in daemon memory; it expires and does not survive restart.
+- Pass sudo passwords over stdin only – never argv or environment variables.
+
+### Roadmap
+
+| Phase | Deliverable |
+|---|---|
+| 7 — Elevation | Elevation endpoint, in-memory cache, and filesystem retry path |
+| 8 — Wallpaper | Wallpaper table, upload/thumbnail generation, CRUD, and asset serving |
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Password resident in daemon memory during sudo | Drop it after the sudo call and never store it in long-lived state |
+| Elevation cache expiry bug | Check expiry on every elevated operation |
+| Thumbnail generation blocking daemon traffic | Run image processing in `spawn_blocking` or a worker task |

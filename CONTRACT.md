@@ -93,6 +93,19 @@ interface FsWatchEvent {
 
 ## Terminal
 
+### Trust boundary and Origin policy
+
+PTY access deliberately keeps Aqua's localhost/no-auth architecture. This accepts that another native process running as the same Windows or WSL user can call the daemon; Origin validation is browser hardening, not authentication.
+
+Both PTY endpoints require an `Origin` header matching one of these exact Aqua WebView origins:
+
+- `http://tauri.localhost` for the packaged Windows app;
+- `http://localhost:1420` for the fixed Vite development server.
+
+A missing, opaque (`null`), or different Origin is rejected with `403 Forbidden` before a shell is spawned or a WebSocket upgrade occurs. Do not reflect arbitrary origins, use suffix matching, or treat CORS response headers as authorization. Adding other development origins requires an explicit configuration and contract decision.
+
+### Spawn
+
 `POST /api/pty/spawn`
 
 ```ts
@@ -107,9 +120,23 @@ interface PtySpawnResponse {
 }
 ```
 
+- `cols` and `rows` must each be an integer from `1` through `1000`.
+- `cwd` defaults to the daemon user's `$HOME`. When supplied, it follows the same allowed-root and no-symlink-traversal policy as the filesystem API and must identify an existing directory.
+- A successful spawn creates a single-use, unguessable session ID. Exactly one WebSocket may attach to it.
+- A spawned session that is not attached within 30 seconds is terminated and removed.
+- Invalid requests use the daemon's structured JSON error response and do not leave a child process running.
+
+### WebSocket bridge
+
 `WS /ws/pty/:sessionId`
 
-- Client → server: raw bytes as WS text/binary frames = stdin. Control frames for resize:
+A missing, expired, unknown, or already-attached `sessionId` is rejected before upgrade. Sessions cannot be reattached after their WebSocket disconnects.
+
+#### Client → server
+
+- **Binary frames:** raw PTY stdin bytes. Empty binary frames are valid no-ops.
+- **Text frames:** control JSON only. The only control message is:
+
   ```ts
   interface PtyResize {
     type: "resize";
@@ -117,13 +144,27 @@ interface PtySpawnResponse {
     rows: number;
   }
   ```
-- Server → client: raw bytes = stdout/stderr, interleaved. On process exit:
+
+  Resize dimensions use the same `1..=1000` bounds as spawn.
+- **Pong frames:** heartbeat acknowledgement.
+- Any non-JSON text, unknown control type or field, invalid dimensions, or other unsupported application frame causes a WebSocket policy-error close (`1008`) and session termination. Terminal input that happens to be UTF-8 is still sent as binary, never as text.
+
+#### Server → client
+
+- **Binary frames:** raw PTY output bytes with stdout and stderr interleaved by the PTY. Bytes are not decoded or normalized.
+- **Text frames:** control JSON only. Process exit is:
+
   ```ts
   interface PtyExit {
     type: "exit";
     code: number;
   }
   ```
+
+  The daemon sends the exit message after PTY output already read from the child, then closes the WebSocket normally (`1000`).
+- **Ping frames:** heartbeat probes.
+
+The daemon sends a ping every 15 seconds. If no pong is received within 10 seconds of a ping, it closes the socket and terminates the session. Client close, transport failure, heartbeat timeout, daemon shutdown, or failed bridge setup also terminates the child process group and removes the session. Terminal input and output must never be written to logs.
 
 ## Activity Monitor
 
@@ -215,6 +256,77 @@ interface SpaceState {
 ```
 
 `PUT` request body = `LayoutState`. Response = `{ success: true }`.
+
+## System & Wallpaper
+
+### Elevation
+
+```ts
+interface ElevateRequest {
+  password: string;
+}
+
+type ElevateResponse =
+  | { success: true; expiresAt: string }
+  | { success: false; error: string };
+```
+
+`POST /api/system/elevate` validates the password with `sudo -S -v`. The daemon pipes the password through stdin, never through argv or the environment, and caches successful elevation in process memory for a fixed window (proposed: five minutes).
+
+`FsOp` gains an optional `elevated` field on every variant. A permissions failure may return `needsElevation: true`; after successful elevation, the client retries the same operation with `elevated: true`.
+
+```ts
+type FsOp =
+  | { op: "createFile"; path: string; elevated?: boolean }
+  | { op: "createDir"; path: string; elevated?: boolean }
+  | { op: "rename"; path: string; newName: string; elevated?: boolean }
+  | { op: "move"; path: string; to: string; elevated?: boolean }
+  | { op: "delete"; path: string; elevated?: boolean }
+  | { op: "chmod"; path: string; mode: string; elevated?: boolean };
+
+type FsOpResponse =
+  | { success: true }
+  | { success: false; error: string; needsElevation?: boolean };
+```
+
+### Wallpaper
+
+```ts
+interface CustomWallpaper {
+  id: string;
+  label: string;
+  addedAt: string;
+}
+
+interface WallpaperState {
+  current: string;
+  custom: CustomWallpaper[];
+}
+
+type WallpaperSetResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+type WallpaperUploadResponse =
+  | { success: true; wallpaper: CustomWallpaper }
+  | { success: false; error: string };
+
+type WallpaperDeleteResponse =
+  | { success: true }
+  | { success: false; error: string };
+```
+
+Built-in wallpaper IDs are frontend-owned and cannot be deleted through the daemon. Custom assets are daemon-owned; deleting the active custom wallpaper makes the client immediately fall back to the built-in Aqua wallpaper.
+
+| Path | Type | Purpose |
+|---|---|---|
+| `POST /api/system/elevate` | REST | Validate the sudo password and cache elevation |
+| `GET /api/wallpaper` | REST | Current selection and custom wallpaper list |
+| `PUT /api/wallpaper` | REST | Set the current wallpaper; body `{ id: string }` |
+| `POST /api/wallpaper/upload` | REST | Upload a custom wallpaper image |
+| `DELETE /api/wallpaper/:id` | REST | Remove a custom wallpaper |
+| `GET /api/wallpaper/asset/:id` | REST | Serve a custom full-resolution image |
+| `GET /api/wallpaper/asset/:id/thumb` | REST | Serve a custom thumbnail |
 
 ## Ownership
 
