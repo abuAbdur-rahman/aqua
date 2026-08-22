@@ -14,6 +14,9 @@ Read `app/AGENTS.md` and `DESIGN.md` before any of these. These specs assume bot
 | `UI-SPEC-04-ActivityMonitor.md` | Activity Monitor — live stats, process list |
 | `UI-SPEC-05-Editor.md` | Editor — Monaco, multi-tab |
 | `UI-SPEC-06-Spotlight.md` | Spotlight — search palette |
+| `UI-SPEC-07-SystemMenu.md` | System Menu and lifecycle actions |
+| `UI-SPEC-08-Modals.md` | Shared confirmation and sudo elevation modals |
+| `UI-SPEC-09-Settings.md` | Settings, appearance, wallpaper, daemon, and About panes |
 
 ## Conventions used across every spec
 

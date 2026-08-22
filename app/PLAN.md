@@ -150,3 +150,62 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 ## 9. Immediate next step
 
 `npm create tauri-app@latest` for the shell + frontend scaffold. Wire the Tauri `setup` hook to spawn `wsl.exe -d Ubuntu -- ./daemon` and poll `/api/health`. Render a full-viewport wallpaper div (per `../DESIGN.md`) with a fixed Dock and MenuBar shell in a frameless window. Confirm the WebView-to-daemon WS round-trip before building any app panels — everything downstream depends on that channel.
+
+## 10. V2 additions
+
+### Scope
+
+| Area | Decision |
+|---|---|
+| System Menu | OS-level dropdown for lifecycle and power actions; Tauri host only |
+| System Modals | Shared confirmation and sudo elevation dialogs |
+| Settings app | Appearance, wallpaper, daemon status, and About panes |
+| Wallpaper | Built-in frontend assets plus daemon-managed custom uploads |
+
+### Frontend modules
+
+```text
+app/src/
+  desktop/
+    SystemMenu.tsx
+  system/
+    ConfirmModal.tsx
+    ElevateModal.tsx
+    modalStore.ts
+  panes/
+    SettingsPane.tsx
+    AppearancePane.tsx
+    WallpaperPane.tsx
+    DaemonPane.tsx
+    AboutPane.tsx
+    wallpaperStore.ts
+```
+
+### API consumption
+
+| Path | Type | Purpose |
+|---|---|---|
+| `POST /api/system/elevate` | REST | Validate sudo password and cache elevation |
+| `GET /api/wallpaper` | REST | Load wallpaper state |
+| `PUT /api/wallpaper` | REST | Apply a wallpaper selection |
+| `POST /api/wallpaper/upload` | REST | Add a custom wallpaper |
+| `DELETE /api/wallpaper/:id` | REST | Remove a custom wallpaper |
+
+### Roadmap
+
+| Phase | Deliverable |
+|---|---|
+| 9 — System Menu & Modals | System menu, shared confirmation/elevation dialogs, and Finder elevation retry |
+| 10 — Settings + Wallpaper | Settings shell, appearance preferences, wallpaper endpoints, daemon status, and About |
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Elevation password lingering in React state | Clear it immediately after the request succeeds or fails |
+| Large wallpaper upload delaying first paint | Generate and serve thumbnails separately from full-resolution assets |
+| Deleting the active custom wallpaper | Fall back to the built-in Aqua wallpaper immediately |
+
+### Immediate next step
+
+Build the shared confirmation and elevation modal state first, then use the System Menu's daemon restart action as the first real caller.
