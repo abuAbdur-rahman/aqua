@@ -229,7 +229,7 @@ export function WindowFrame({ win, containerRef }: Props) {
       {/* Content — scaffolded 4-state panes per UI-SPEC-02..06 (real data wiring in Phases 2-6) */}
       <div className="flex-1 overflow-auto bg-bg-surface">
         {win.appId === "finder" && <FinderPane />}
-        {win.appId === "terminal" && <TerminalPane state="connected" />}
+        {win.appId === "terminal" && <TerminalPane />}
         {win.appId === "activity" && <ActivityPane state="populated" />}
         {win.appId === "editor" && <EditorPane state="populated" />}
         {win.appId === "spotlight" && <SpotlightPane open />}
