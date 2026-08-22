@@ -21,38 +21,50 @@ export function useDaemonConnection() {
 
   useEffect(() => {
     let cancelled = false;
-    let interval: number;
+    let ws: WebSocket | null = null;
+    let interval: number | undefined;
 
-    (async () => {
-      await pollHealth();
-      if (cancelled) return;
+    const connect = async () => {
+      try {
+        const res = await checkHealth();
+        if (cancelled) return;
+        setVersion(res.version);
+        setState("connected");
 
-      const ws = new WebSocket(wsUrl("/ws/echo"));
-      ws.onopen = () => {
-        ws.send("ping");
-        if (!cancelled) setWsConnected(true);
-      };
-      ws.onmessage = () => {};
-      ws.onclose = () => {
-        if (!cancelled) setWsConnected(false);
-      };
-      ws.onerror = () => {
-        if (!cancelled) setWsConnected(false);
-      };
+        ws = new WebSocket(wsUrl("/ws/echo"));
+        ws.onopen = () => {
+          ws?.send("ping");
+          if (!cancelled) setWsConnected(true);
+        };
+        ws.onmessage = () => {};
+        ws.onclose = () => {
+          if (!cancelled) setWsConnected(false);
+        };
+        ws.onerror = () => {
+          if (!cancelled) setWsConnected(false);
+        };
 
-      interval = window.setInterval(() => {
-        if (!cancelled) pollHealth();
-      }, 30_000);
+        interval = window.setInterval(() => {
+          if (!cancelled) void pollHealth();
+        }, 30_000);
+      } catch {
+        if (!cancelled) {
+          setState("failed");
+          setVersion(null);
+        }
+      }
+    };
 
-      return () => {
-        cancelled = true;
-        ws.close();
-        clearInterval(interval);
-      };
-    })();
+    void connect();
 
     return () => {
       cancelled = true;
+      if (interval !== undefined) window.clearInterval(interval);
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
     };
   }, [pollHealth]);
 
