@@ -29,7 +29,6 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
     return fw ?? null;
   });
   const focusedApp = focusedWindow ? appManifest[focusedWindow.appId] : null;
-  const FocusedIcon = focusedApp?.icon;
 
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -76,8 +75,8 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
       {/* Left cluster: focused app icon+name + menus */}
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-1.5">
-          {FocusedIcon ? (
-            <FocusedIcon className="h-4 w-4 text-text-primary" aria-hidden="true" />
+          {focusedApp ? (
+            <img src={focusedApp.icon} alt="" className="h-4 w-4 object-contain" aria-hidden="true" />
           ) : (
             <FiMonitor className="h-4 w-4 text-text-primary" aria-hidden="true" />
           )}

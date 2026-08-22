@@ -18,6 +18,7 @@ interface TerminalTab {
 interface TerminalSurfaceProps {
   tab: TerminalTab;
   active: boolean;
+  fontSize: number;
   onStateChange: (state: TabState, exitCode?: number) => void;
 }
 
@@ -49,9 +50,10 @@ function terminalTheme() {
   };
 }
 
-function TerminalSurface({ tab, active, onStateChange }: TerminalSurfaceProps) {
+function TerminalSurface({ tab, active, fontSize, onStateChange }: TerminalSurfaceProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const sessionRef = useRef<PtySession | null>(null);
   const schedulerRef = useRef<ReturnType<typeof createResizeScheduler> | null>(null);
   const onStateChangeRef = useRef(onStateChange);
@@ -64,12 +66,13 @@ function TerminalSurface({ tab, active, onStateChange }: TerminalSurfaceProps) {
       convertEol: true,
       cursorStyle: "block",
       fontFamily: "JetBrains Mono, ui-monospace, monospace",
-      fontSize: 12,
+      fontSize,
       theme: terminalTheme(),
       scrollback: 5000,
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
+    fitRef.current = fit;
     terminal.open(host);
     terminalRef.current = terminal;
     const input = terminal.onData((data) => sessionRef.current?.sendInput(new TextEncoder().encode(data)));
@@ -118,6 +121,7 @@ function TerminalSurface({ tab, active, onStateChange }: TerminalSurfaceProps) {
       binaryInput.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      fitRef.current = null;
     };
   }, []);
 
@@ -125,6 +129,13 @@ function TerminalSurface({ tab, active, onStateChange }: TerminalSurfaceProps) {
     const terminal = terminalRef.current;
     if (terminal) terminal.options.cursorStyle = active ? "block" : "underline";
   }, [active]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.fontSize = fontSize;
+    fitRef.current?.fit();
+  }, [fontSize]);
 
   return (
     <div className={`absolute inset-0 p-2 ${active ? "block" : "hidden"}`} aria-hidden={!active}>
@@ -145,6 +156,7 @@ function newTab(): TerminalTab {
 export function TerminalPane() {
   const [tabs, setTabs] = useState<TerminalTab[]>(() => [newTab()]);
   const [activeId, setActiveId] = useState(tabs[0].id);
+  const [fontSize, setFontSize] = useState(12);
 
   const updateTab = (id: string, state: TabState, exitCode?: number) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, state, ...(state === "spawning" ? { restartKey: tab.restartKey + 1 } : {}), ...(exitCode === undefined ? {} : { exitCode }) } : tab));
@@ -157,6 +169,21 @@ export function TerminalPane() {
     setTabs(next);
     if (id === activeId) setActiveId(next[Math.max(0, index - 1)].id);
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        setFontSize((size) => Math.min(24, size + 1));
+      } else if (event.key === "-") {
+        event.preventDefault();
+        setFontSize((size) => Math.max(8, size - 1));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-bg-surface font-mono text-xs">
@@ -172,7 +199,7 @@ export function TerminalPane() {
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        {tabs.map((tab) => <TerminalSurface key={`${tab.id}-${tab.restartKey}`} tab={tab} active={tab.id === activeId} onStateChange={(state, code) => updateTab(tab.id, state, code)} />)}
+        {tabs.map((tab) => <TerminalSurface key={`${tab.id}-${tab.restartKey}`} tab={tab} active={tab.id === activeId} fontSize={fontSize} onStateChange={(state, code) => updateTab(tab.id, state, code)} />)}
       </div>
     </div>
   );

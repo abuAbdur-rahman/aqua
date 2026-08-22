@@ -136,15 +136,12 @@ export function WindowFrame({ win, containerRef }: Props) {
   };
 
   const manifest = appManifest[win.appId];
-  const Icon = manifest?.icon;
   const titleEmDash = manifest ? `${manifest.name} — ${win.title.replace(`${manifest.name} — `, "")}` : win.title;
 
   // GPU-only motion: transform + opacity, no layout thrash
   const origin = useMemo(() => dockOrigin(win.appId), [win.appId]);
   const containerRect = containerRef.current?.getBoundingClientRect();
   const initialTranslate = origin && containerRect ? { x: origin.x - containerRect.left - win.x - win.w / 2, y: origin.y - containerRect.top - win.y - win.h / 2 } : { x: 0, y: 12 };
-
-  if (win.minimized) return null;
 
   const trafficOpacity = win.focused ? 1 : titleHover ? 1 : 0.35;
   const trafficRestOpacity = win.focused ? 0.92 : 0.6;
@@ -154,6 +151,7 @@ export function WindowFrame({ win, containerRef }: Props) {
       role="dialog"
       aria-label={win.title}
       aria-modal="false"
+      aria-hidden={win.minimized}
       onMouseDown={() => focus(win.id)}
       initial={reduced ? false : { opacity: 0, scale: 0.96, x: initialTranslate.x, y: initialTranslate.y }}
       animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
@@ -170,6 +168,8 @@ export function WindowFrame({ win, containerRef }: Props) {
         width: win.w,
         height: win.h,
         zIndex: win.z,
+        visibility: win.minimized ? "hidden" : "visible",
+        pointerEvents: win.minimized ? "none" : "auto",
         willChange: "transform, opacity",
       }}
     >
@@ -219,7 +219,7 @@ export function WindowFrame({ win, containerRef }: Props) {
         </div>
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5">
-          {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />}
+          {manifest && <img src={manifest.icon} alt="" className="h-3.5 w-3.5 shrink-0 object-contain" aria-hidden="true" />}
           <span className={`truncate text-[13px] font-medium leading-none ${win.focused ? "text-text-primary" : "text-text-tertiary"}`}>{titleEmDash}</span>
         </div>
 

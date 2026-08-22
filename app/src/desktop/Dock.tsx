@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform, AnimatePresence, type MotionValue } from "framer-motion";
-import { FiFolder, FiTerminal, FiCpu, FiCode, FiSearch, FiTrash2 } from "react-icons/fi";
+import { appManifest } from "../windows/manifest";
 import { useWindowStore } from "../windows/store";
 
 // macOS Dock principles: width/height expansion (not scale), ripple via proximity, sub-pixel weighting, bottom anchor
@@ -11,15 +11,15 @@ const PROXIMITY_RADIUS = 150;
 interface DockItem {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: string;
 }
 
 const DOCK_ORDER: DockItem[] = [
-  { id: "finder", label: "Finder", icon: FiFolder },
-  { id: "terminal", label: "Terminal", icon: FiTerminal },
-  { id: "editor", label: "Editor", icon: FiCode },
-  { id: "activity", label: "Activity", icon: FiCpu },
-  { id: "spotlight", label: "Spotlight", icon: FiSearch },
+  { id: "finder", label: "Finder", icon: appManifest.finder.icon },
+  { id: "terminal", label: "Terminal", icon: appManifest.terminal.icon },
+  { id: "editor", label: "Editor", icon: appManifest.editor.icon },
+  { id: "activity", label: "Activity", icon: appManifest.activity.icon },
+  { id: "spotlight", label: "Spotlight", icon: appManifest.spotlight.icon },
 ];
 
 function DockIcon({
@@ -71,7 +71,7 @@ function DockIcon({
       style={{ width: size, height: size } as unknown as React.CSSProperties}
       className="group relative flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-secondary ring-1 ring-white/5 transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
     >
-      <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <img src={item.icon} alt="" className="h-8 w-8 shrink-0 object-contain" aria-hidden="true" />
       {focused && (
         <span className="absolute -bottom-1 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden="true" />
       )}
@@ -172,7 +172,7 @@ export function Dock() {
             style={{ width: trashSize, height: trashSize } as unknown as React.CSSProperties}
             className="flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 focus-visible:outline-2 focus-visible:outline-accent"
           >
-            <FiTrash2 className="h-5 w-5" aria-hidden="true" />
+            <img src="/icons/icon-trash.svg" alt="" className="h-8 w-8 object-contain" aria-hidden="true" />
           </motion.button>
         </motion.div>
       </div>
