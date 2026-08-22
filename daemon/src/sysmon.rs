@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     extract::{
@@ -23,24 +29,44 @@ const CHANNEL_CAPACITY: usize = 4;
 pub(crate) struct Manager {
     updates: broadcast::Sender<Stats>,
     shutdown: watch::Sender<bool>,
+    active_clients: Arc<AtomicUsize>,
+    active: watch::Sender<bool>,
 }
 
 impl Manager {
     pub(crate) fn new() -> Self {
         let (updates, _) = broadcast::channel(CHANNEL_CAPACITY);
         let (shutdown, mut shutdown_rx) = watch::channel(false);
+        let (active, mut active_rx) = watch::channel(false);
+        let active_clients = Arc::new(AtomicUsize::new(0));
         let sender = updates.clone();
         tokio::spawn(async move {
             let mut ticker = interval(POLL_INTERVAL);
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            let mut system = System::new_all();
-            let mut disks = Disks::new_with_refreshed_list();
+            let mut system = None;
+            let mut disks = None;
             loop {
+                if !*active_rx.borrow() {
+                    tokio::select! {
+                        result = active_rx.changed() => {
+                            if result.is_err() { break; }
+                        }
+                        result = shutdown_rx.changed() => {
+                            if result.is_err() || *shutdown_rx.borrow() { break; }
+                        }
+                    }
+                    continue;
+                }
+                let system = system.get_or_insert_with(System::new_all);
+                let disks = disks.get_or_insert_with(Disks::new_with_refreshed_list);
                 tokio::select! {
                     _ = ticker.tick() => {
                         system.refresh_all();
                         disks.refresh(true);
-                        let _ = sender.send(collect_stats(&system, &disks));
+                        let _ = sender.send(collect_stats(system, disks));
+                    }
+                    result = active_rx.changed() => {
+                        if result.is_err() { break; }
                     }
                     result = shutdown_rx.changed() => {
                         if result.is_err() || *shutdown_rx.borrow() {
@@ -50,11 +76,30 @@ impl Manager {
                 }
             }
         });
-        Self { updates, shutdown }
+        Self {
+            updates,
+            shutdown,
+            active_clients,
+            active,
+        }
     }
 
-    pub(crate) fn subscribe(&self) -> broadcast::Receiver<Stats> {
-        self.updates.subscribe()
+    pub(crate) fn subscribe(&self) -> Subscription {
+        let clients = self.active_clients.fetch_add(1, Ordering::AcqRel) + 1;
+        if clients == 1 {
+            let _ = self.active.send(true);
+        }
+        Subscription {
+            receiver: self.updates.subscribe(),
+            manager: self.clone(),
+        }
+    }
+
+    fn disconnect(&self) {
+        let previous = self.active_clients.fetch_sub(1, Ordering::AcqRel);
+        if previous == 1 {
+            let _ = self.active.send(false);
+        }
     }
 
     pub(crate) fn shutdown(&self) {
@@ -62,6 +107,22 @@ impl Manager {
     }
 }
 
+pub(crate) struct Subscription {
+    receiver: broadcast::Receiver<Stats>,
+    manager: Manager,
+}
+
+impl Subscription {
+    async fn recv(&mut self) -> Result<Stats, broadcast::error::RecvError> {
+        self.receiver.recv().await
+    }
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        self.manager.disconnect();
+    }
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Stats {
@@ -127,7 +188,7 @@ pub(crate) async fn upgrade(State(state): State<AppState>, upgrade: WebSocketUpg
     upgrade.on_upgrade(move |socket| socket_loop(socket, receiver))
 }
 
-async fn socket_loop(mut socket: WebSocket, mut receiver: broadcast::Receiver<Stats>) {
+async fn socket_loop(mut socket: WebSocket, mut receiver: Subscription) {
     loop {
         tokio::select! {
             result = receiver.recv() => {

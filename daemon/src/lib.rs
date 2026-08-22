@@ -1,5 +1,6 @@
 mod fs;
 mod pty;
+mod search;
 mod sysmon;
 mod watch;
 
@@ -31,18 +32,21 @@ pub(crate) struct AppState {
     fs_root_fd: Arc<std::fs::File>,
     pub(crate) pty: pty::SessionManager,
     pub(crate) sysmon: sysmon::Manager,
+    pub(crate) search: search::Manager,
 }
 
 #[derive(Clone)]
 pub struct DaemonShutdown {
     pty: pty::SessionManager,
     sysmon: sysmon::Manager,
+    search: search::Manager,
 }
 
 impl DaemonShutdown {
     pub fn shutdown(&self) {
         self.pty.shutdown();
         self.sysmon.shutdown();
+        self.search.shutdown();
     }
 }
 
@@ -59,13 +63,15 @@ pub fn daemon_addr() -> SocketAddr {
 }
 
 pub fn router() -> Router {
-    router_with_shutdown().0
+    let home = env::var_os("HOME").expect("HOME must be set for filesystem access");
+    let root = std::fs::canonicalize(home).expect("HOME must reference an existing directory");
+    build_router(root, false).0
 }
 
 pub fn router_with_shutdown() -> (Router, DaemonShutdown) {
     let home = env::var_os("HOME").expect("HOME must be set for filesystem access");
     let root = std::fs::canonicalize(home).expect("HOME must reference an existing directory");
-    build_router(root)
+    build_router(root, true)
 }
 
 pub fn router_with_fs_root(root: PathBuf) -> Router {
@@ -73,10 +79,10 @@ pub fn router_with_fs_root(root: PathBuf) -> Router {
 }
 
 pub fn router_with_fs_root_and_shutdown(root: PathBuf) -> (Router, DaemonShutdown) {
-    build_router(root)
+    build_router(root, false)
 }
 
-fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
+fn build_router(root: PathBuf, start_indexer: bool) -> (Router, DaemonShutdown) {
     let root =
         std::fs::canonicalize(root).expect("filesystem root must reference an existing directory");
     let fs_root_fd = openat2(
@@ -90,20 +96,22 @@ fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
     let fs_root_fd = std::fs::File::from(fs_root_fd);
     let pty = pty::SessionManager::new();
     let sysmon = sysmon::Manager::new();
+    let search = search::Manager::new(root.clone(), start_indexer);
     let state = AppState {
         version: Arc::from(env!("CARGO_PKG_VERSION")),
         fs_root: Arc::from(root),
         fs_root_fd: Arc::new(fs_root_fd),
         pty: pty.clone(),
         sysmon: sysmon.clone(),
+        search: search.clone(),
     };
-
     let router = Router::new()
         .route("/api/health", get(health))
         .route("/api/fs/list", get(fs::list))
         .route("/api/fs/read", get(fs::read))
         .route("/api/fs/op", post(fs::operate))
         .route("/api/fs/write", put(fs::write))
+        .route("/api/search", get(search::query))
         .route("/api/pty/spawn", post(pty::spawn))
         .route("/ws/pty/{session_id}", get(pty::upgrade))
         .route("/ws/sysmon", get(sysmon::upgrade))
@@ -127,7 +135,14 @@ fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
                 .allow_headers([axum::http::header::CONTENT_TYPE]),
         )
         .with_state(state);
-    (router, DaemonShutdown { pty, sysmon })
+    (
+        router,
+        DaemonShutdown {
+            pty,
+            sysmon,
+            search,
+        },
+    )
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
