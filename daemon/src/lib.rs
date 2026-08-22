@@ -1,5 +1,6 @@
 mod fs;
 mod pty;
+mod sysmon;
 mod watch;
 
 use std::{
@@ -29,16 +30,19 @@ pub(crate) struct AppState {
     fs_root: Arc<Path>,
     fs_root_fd: Arc<std::fs::File>,
     pub(crate) pty: pty::SessionManager,
+    pub(crate) sysmon: sysmon::Manager,
 }
 
 #[derive(Clone)]
 pub struct DaemonShutdown {
     pty: pty::SessionManager,
+    sysmon: sysmon::Manager,
 }
 
 impl DaemonShutdown {
     pub fn shutdown(&self) {
         self.pty.shutdown();
+        self.sysmon.shutdown();
     }
 }
 
@@ -85,11 +89,13 @@ fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
     .expect("filesystem root must be openable");
     let fs_root_fd = std::fs::File::from(fs_root_fd);
     let pty = pty::SessionManager::new();
+    let sysmon = sysmon::Manager::new();
     let state = AppState {
         version: Arc::from(env!("CARGO_PKG_VERSION")),
         fs_root: Arc::from(root),
         fs_root_fd: Arc::new(fs_root_fd),
         pty: pty.clone(),
+        sysmon: sysmon.clone(),
     };
 
     let router = Router::new()
@@ -100,6 +106,7 @@ fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
         .route("/api/fs/write", put(fs::write))
         .route("/api/pty/spawn", post(pty::spawn))
         .route("/ws/pty/{session_id}", get(pty::upgrade))
+        .route("/ws/sysmon", get(sysmon::upgrade))
         .route("/ws/fs-watch", get(watch_upgrade))
         .route("/ws/echo", get(echo_upgrade))
         .layer(
@@ -120,7 +127,7 @@ fn build_router(root: PathBuf) -> (Router, DaemonShutdown) {
                 .allow_headers([axum::http::header::CONTENT_TYPE]),
         )
         .with_state(state);
-    (router, DaemonShutdown { pty })
+    (router, DaemonShutdown { pty, sysmon })
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
