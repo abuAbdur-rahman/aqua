@@ -6,6 +6,14 @@ export interface SpaceRecord {
   name: string;
 }
 
+export interface HydratePayload {
+  windows: WindowRecord[];
+  spaces: SpaceRecord[];
+  activeSpaceId: number;
+  nextZ: number;
+  idSeq: number;
+}
+
 export interface WindowRecord {
   id: string;
   appId: string;
@@ -41,6 +49,7 @@ interface WindowState {
   addSpace: () => void;
   removeSpace: (id: number) => void;
   moveWindowToSpace: (winId: string, spaceId: number) => void;
+  hydrate: (payload: HydratePayload) => void;
   editorPathRequest: string | null;
   finderPathRequest: string | null;
   terminalPathRequest: string | null;
@@ -263,15 +272,29 @@ export const useWindowStore = create<WindowState>((set, get) => ({
           const prev = w.prevBounds ?? { x: 80, y: 40, w: w.w, h: w.h };
           return { ...w, ...prev, maximized: false, prevBounds: null };
         }
-        return {
-          ...w,
-          prevBounds: { x: w.x, y: w.y, w: w.w, h: w.h },
-          x: 8,
-          y: 8,
-          w: container.w - 16,
-          h: container.h - 16,
-          maximized: true,
-        };
+      return {
+        ...w,
+        prevBounds: { x: w.x, y: w.y, w: w.w, h: w.h },
+        x: 8,
+        y: 8,
+        w: container.w - 16,
+        h: container.h - 16,
+        maximized: true,
+      };
       }),
     })),
+
+  hydrate: (p) => {
+    idSeq = p.idSeq;
+    const top = p.windows
+      .filter((w) => w.spaceId === p.activeSpaceId && !w.minimized)
+      .reduce<WindowRecord | null>((a, b) => (a && a.z > b.z ? a : b), null);
+    set({
+      windows: p.windows.map((w) => ({ ...w, focused: top != null && w.id === top.id })),
+      spaces: p.spaces,
+      activeSpaceId: p.activeSpaceId,
+      nextZ: p.nextZ,
+      focusedId: top?.id ?? null,
+    });
+  },
 }));

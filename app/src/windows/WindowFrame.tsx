@@ -1,11 +1,15 @@
-import { useRef, useCallback, useState, useMemo } from "react";
+import { useRef, useCallback, useState, useMemo, lazy, Suspense } from "react";
 import { motion } from "framer-motion";
 import { appManifest } from "./manifest";
 import { useWindowStore, type WindowRecord } from "./store";
 import { FinderPane } from "../panes/FinderPane";
-import { TerminalPane } from "../panes/TerminalPane";
 import { ActivityPane } from "../panes/ActivityPane";
 import { EditorPane } from "../panes/EditorPane";
+
+// xterm.js is heavy; load the Terminal pane only when a terminal window opens.
+const TerminalPane = lazy(() =>
+  import("../panes/TerminalPane").then((m) => ({ default: m.TerminalPane })),
+);
 
 type Props = {
   win: WindowRecord;
@@ -175,7 +179,11 @@ export function WindowFrame({ win, containerRef }: Props) {
       {/* Title bar 28px per DESIGN.md */}
       <div
         onPointerDown={onTitlePointerDown}
-        onDoubleClick={() => {
+        onDoubleClick={(e) => {
+          // Ignore double-clicks that land on a traffic light: the green button
+          // toggles on its own click, and firing both would triple-toggle
+          // (maximize → restore → maximize) and appear to "only enlarge".
+          if ((e.target as HTMLElement).closest("button")) return;
           const c = containerRef.current?.getBoundingClientRect();
           if (c) toggleMaximize(win.id, { w: c.width, h: c.height });
         }}
@@ -228,7 +236,17 @@ export function WindowFrame({ win, containerRef }: Props) {
       {/* Content — scaffolded 4-state panes per UI-SPEC-02..06 (real data wiring in Phases 2-6) */}
       <div className="flex-1 overflow-auto bg-bg-surface">
         {win.appId === "finder" && <FinderPane />}
-        {win.appId === "terminal" && <TerminalPane />}
+        {win.appId === "terminal" && (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-text-tertiary" role="status">
+                Loading terminal…
+              </div>
+            }
+          >
+            <TerminalPane />
+          </Suspense>
+        )}
         {win.appId === "activity" && <ActivityPane />}
         {win.appId === "editor" && <EditorPane />}
         {!["finder", "terminal", "activity", "editor"].includes(win.appId) && (

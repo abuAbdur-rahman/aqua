@@ -74,7 +74,7 @@ function DockIcon({
       {focused && (
         <span className="absolute -bottom-1 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden="true" />
       )}
-      {running && (
+      {running && !focused && (
         <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5" aria-hidden="true">
           {overflow ? (
             <span className="text-[9px] font-medium leading-none text-accent">+{count}</span>
@@ -145,7 +145,7 @@ export function Dock() {
 
   return (
     <>
-      <div className="fixed bottom-2 left-1/2 z-50 flex -translate-x-1/2 items-end justify-center">
+      <div className="fixed bottom-2 left-1/2 z-[2147483647] flex -translate-x-1/2 items-end justify-center">
         <motion.div
           onMouseMove={(e) => mouseX.set(e.pageX)}
           onMouseLeave={() => mouseX.set(Infinity)}
@@ -184,7 +184,7 @@ export function Dock() {
             exit={{ opacity: 0, scale: 0.98, y: 4 }}
             transition={{ duration: 0.14, ease: [0.4, 0, 0.2, 1] }}
             style={{ left: ctx.x, top: ctx.y - 80, willChange: "transform, opacity" } as React.CSSProperties}
-            className="fixed z-[60] w-44 rounded-card border border-bg-hover bg-bg-overlay p-1 shadow-[0_16px_32px_rgba(0,0,0,0.4)]"
+            className="fixed z-[2147483647] w-44 rounded-card border border-bg-hover bg-bg-overlay p-1 shadow-[0_16px_32px_rgba(0,0,0,0.4)]"
           >
             <button
               onClick={() => {

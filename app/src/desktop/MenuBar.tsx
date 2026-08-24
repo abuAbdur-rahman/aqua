@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiMonitor } from "react-icons/fi";
 import { appManifest } from "../windows/manifest";
 import { useWindowStore } from "../windows/store";
+import { buildAppMenus } from "./menus";
+import type { AppMenuGroup } from "./menuTypes";
 
 interface MenuBarProps {
   daemonState: "connecting" | "connected" | "failed";
@@ -29,6 +31,59 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
     return fw ?? null;
   });
   const focusedApp = focusedWindow ? appManifest[focusedWindow.appId] : null;
+
+  const groups = useMemo<AppMenuGroup[]>(
+    () => (focusedWindow ? buildAppMenus(focusedWindow.appId, focusedWindow.id) : []),
+    [focusedWindow],
+  );
+
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const menuNavRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (openGroup == null) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuNavRef.current && !menuNavRef.current.contains(e.target as Node)) setOpenGroup(null);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenGroup(null);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onEsc);
+    };
+  }, [openGroup]);
+
+  // Move focus into the open menu and support arrow-key navigation.
+  useEffect(() => {
+    if (openGroup == null) return;
+    const first = dropdownRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])');
+    first?.focus();
+  }, [openGroup]);
+
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    const items = Array.from(
+      dropdownRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [],
+    );
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      items[(idx + 1) % items.length]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      items[0]?.focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      items[items.length - 1]?.focus();
+    }
+  };
 
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -68,7 +123,7 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-50 flex h-6 items-center gap-3 border-b border-white/[0.06] bg-bg-elevated px-3 select-none"
+      className="fixed top-0 left-0 right-0 z-[2147483647] flex h-6 items-center gap-3 border-b border-white/[0.06] bg-bg-elevated px-3 select-none"
       role="menubar"
       aria-label="Aqua menu bar"
     >
@@ -84,16 +139,63 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
             {focusedApp ? focusedApp.name : "Aqua"}
           </span>
         </span>
-        {focusedApp && focusedApp.menus.length > 0 && (
-          <nav className="hidden items-center gap-0.5 sm:flex" aria-label={`${focusedApp.name} menus`}>
-            {focusedApp.menus.map((m) => (
-              <button
-                key={m}
-                className="rounded px-1.5 py-0.5 text-[12px] font-medium leading-none text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
-              >
-                {m}
-              </button>
-            ))}
+        {groups.length > 0 && (
+          <nav ref={menuNavRef} className="hidden items-center gap-0.5 sm:flex" aria-label={`${focusedApp?.name ?? "Aqua"} menus`}>
+            {groups.map((g) => {
+              const isOpen = openGroup === g.label;
+              return (
+                <div key={g.label} className="relative">
+                  <button
+                    onClick={() => setOpenGroup(isOpen ? null : g.label)}
+                    aria-haspopup="menu"
+                    aria-expanded={isOpen}
+                    className={`rounded px-1.5 py-0.5 text-[12px] font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1 ${
+                      isOpen ? "bg-bg-hover text-text-primary" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                  <AnimatePresence>
+                    {isOpen && (
+                      <motion.div
+                        ref={dropdownRef}
+                        role="menu"
+                        onKeyDown={onMenuKeyDown}
+                        initial={{ opacity: 0, y: 4, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                        transition={{ duration: 0.14, ease: [0.4, 0, 0.2, 1] }}
+                        className="absolute left-0 top-6 z-[2147483647] min-w-48 rounded-card border border-bg-hover bg-bg-overlay p-1 shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+                        style={{ willChange: "transform, opacity" }}
+                      >
+                        {g.items.map((item) => (
+                          <div key={item.id} role="none">
+                            <button
+                              role="menuitem"
+                              disabled={item.enabled === false}
+                              onClick={() => {
+                                if (item.enabled === false) return;
+                                item.onSelect();
+                                setOpenGroup(null);
+                              }}
+                              className={`flex w-full items-center justify-between gap-6 rounded px-3 py-1.5 text-left text-xs ${
+                                item.enabled === false
+                                  ? "cursor-default text-text-tertiary"
+                                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                              }`}
+                            >
+                              <span>{item.label}</span>
+                              {item.shortcut && <span className="text-text-tertiary">{item.shortcut}</span>}
+                            </button>
+                            {item.separatorAfter && <div className="my-1 h-px bg-white/10" aria-hidden="true" />}
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
           </nav>
         )}
         {daemonVersion && (

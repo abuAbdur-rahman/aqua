@@ -3,6 +3,8 @@
 
 use std::process::Command;
 use std::time::Duration;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use thiserror::Error;
@@ -82,6 +84,39 @@ async fn greet(name: String) -> Result<String, String> {
     Ok(format!("Hello, {}! You've been greeted from Rust!", name))
 }
 
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let menu = Menu::with_items(
+        app,
+        &[
+            &MenuItem::with_id(app, "show", "Show Aqua", true, None::<&str>)?,
+            &MenuItem::with_id(app, "quit", "Quit Aqua", true, None::<&str>)?,
+        ],
+    )?;
+
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .expect("default window icon must be set");
+
+    TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("Aqua")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -115,6 +150,9 @@ pub fn run() {
                     eprintln!("Daemon setup failed: {}", e);
                 }
             });
+            if let Err(e) = build_tray(app.handle()) {
+                eprintln!("Tray setup failed: {}", e);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

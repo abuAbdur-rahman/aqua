@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   FiChevronDown,
   FiChevronRight,
@@ -89,6 +90,8 @@ export function FinderPane() {
   const [editingPath, setEditingPath] = useState(false);
   const [pathInput, setPathInput] = useState(HOME_PATH);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: FsEntry | null } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
   const openEditor = useWindowStore((state) => state.openEditor);
   const openTerminal = useWindowStore((state) => state.openApp);
   const finderPathRequest = useWindowStore((state) => state.finderPathRequest);
@@ -132,6 +135,34 @@ export function FinderPane() {
   }, [entries, load, path]);
 
   useFsWatch(path, onWatchEvent);
+
+  // Close the context menu on any outside press. Required because the menu is
+  // portaled to document.body, so it falls outside the window's own DOM.
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setMenu(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menu]);
+
+  // Flip the context menu up/left when it would overflow the viewport so the
+  // last item is never clipped below the screen edge.
+  useLayoutEffect(() => {
+    if (!menu) return;
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 8;
+    const maxLeft = window.innerWidth - margin - rect.width;
+    const maxTop = window.innerHeight - margin - rect.height;
+    setMenuPos({
+      left: Math.min(Math.max(margin, menu.x), Math.max(margin, maxLeft)),
+      top: Math.min(Math.max(margin, menu.y), Math.max(margin, maxTop)),
+    });
+  }, [menu]);
 
   const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === "dir" ? -1 : 1;
@@ -328,20 +359,23 @@ export function FinderPane() {
         </div>
       </section>
 
-      {menu && <div className="fixed z-[100] min-w-44 rounded-card border border-bg-hover bg-bg-elevated p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
-        {menu.entry?.kind === "file" && <>
-          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openEditor(menu.entry?.path ?? ""); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Open in Editor</button>
-          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openTerminal(parentPath(menu.entry?.path ?? path)); setMenu(null); }}><FiTerminal aria-hidden="true" /> Open in Terminal</button>
-        </>}
-        {menu.entry?.kind === "dir" && <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { setPath(menu.entry?.path ?? path); setMenu(null); }}><FiFolder aria-hidden="true" /> Open folder</button>}
-        {!menu.entry && <>
-          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFile(); setMenu(null); }}><FiFile aria-hidden="true" /> New file</button>
-          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFolder(); setMenu(null); }}><FiFolder aria-hidden="true" /> New folder</button>
-        </>}
-      </div>}
+      {menu && createPortal(
+        <div ref={menuRef} className="fixed z-[100] min-w-44 rounded-card border border-bg-hover bg-bg-elevated p-1 shadow-xl" style={{ left: menuPos.left, top: menuPos.top }} onMouseDown={(event) => event.stopPropagation()}>
+          {menu.entry?.kind === "file" && <>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openEditor(menu.entry?.path ?? ""); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Open in Editor</button>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openTerminal(parentPath(menu.entry?.path ?? path)); setMenu(null); }}><FiTerminal aria-hidden="true" /> Open in Terminal</button>
+          </>}
+          {menu.entry?.kind === "dir" && <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { setPath(menu.entry?.path ?? path); setMenu(null); }}><FiFolder aria-hidden="true" /> Open folder</button>}
+          {!menu.entry && <>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFile(); setMenu(null); }}><FiFile aria-hidden="true" /> New file</button>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void newFolder(); setMenu(null); }}><FiFolder aria-hidden="true" /> New folder</button>
+          </>}
+        </div>,
+        document.body,
+      )}
 
       {showPreview && (
-        <aside className="flex w-56 shrink-0 flex-col border-l border-bg-hover bg-bg-overlay/30" aria-label="Quick Look preview">
+        <aside className="flex w-56 shrink-0 flex-col border-l border-bg-hover bg-bg-overlay/30 sm:w-64 md:w-72 lg:w-80 xl:w-96" aria-label="Quick Look preview">
           <div className="flex min-h-9 items-center justify-between border-b border-bg-hover px-3"><span className="truncate font-medium text-text-primary">{preview?.entry.name ?? "Quick Look"}</span><button className="rounded p-1 text-text-tertiary hover:bg-bg-hover" aria-label="Close preview" onClick={() => setShowPreview(false)}><FiX aria-hidden="true" /></button></div>
           {!preview && <div className="flex flex-1 items-center justify-center p-4 text-center text-text-tertiary">Select a file to preview.</div>}
           {preview && <div className="min-h-0 flex-1 overflow-auto p-3">

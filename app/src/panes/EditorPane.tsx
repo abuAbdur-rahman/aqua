@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import { FiFile, FiFolder, FiPlus, FiSave, FiX } from "react-icons/fi";
 import { createFile, readFile, writeFile } from "../lib/filesystem";
 import { editorFileState, languageForFile } from "../lib/editorFiles";
 import { useWindowStore } from "../windows/store";
+
+// Monaco is heavy; load the editor only when an Editor window actually opens.
+const MonacoEditor = lazy(() => import("./MonacoEditor"));
 
 type EditorState = "loading" | "ready" | "error-read" | "binary";
 type SaveState = "saved" | "saving" | "error";
@@ -48,7 +51,10 @@ function EditorLoading() {
 }
 
 export function EditorPane({ initialPath }: Props) {
-  const [tabs, setTabs] = useState<EditorTab[]>(() => [newTab(initialPath, "initial")]);
+  const [tabs, setTabs] = useState<EditorTab[]>(() => {
+    const request = useWindowStore.getState().editorPathRequest;
+    return [newTab(request && request.trim() ? request : initialPath, "initial")];
+  });
   const [activeId, setActiveId] = useState("initial");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
@@ -147,6 +153,13 @@ export function EditorPane({ initialPath }: Props) {
     if (activeId === id) setActiveId(next[0].id);
   };
 
+  // Keep the latest save handler reachable from Monaco's Ctrl+S command,
+  // which is registered once on mount and would otherwise capture a stale closure.
+  const saveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    saveRef.current = beginSave;
+  }, [beginSave]);
+
   const language = languageForFile(active.path);
   const readOnly = (active.path !== "untitled" && editorFileState(active.path) === "uneditable") || active.truncated || active.encoding === "base64" || active.state !== "ready";
 
@@ -168,7 +181,7 @@ export function EditorPane({ initialPath }: Props) {
 
      {editorFileState(active.path) === "uneditable" && active.path !== "untitled" && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is uneditable. Editing and saving are disabled.</div>}
      {active.truncated && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is large — showing the first portion. Editing and saving are disabled.</div>}
-     {active.state === "binary" ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"><p className="text-sm text-text-primary">This file can&apos;t be edited here</p><button onClick={openFile} className="text-xs text-accent">Open another file</button></div> : active.state === "error-read" ? <div className="m-3 rounded-card border-l-2 border-status-danger bg-status-danger/10 p-3"><p className="text-xs font-medium text-text-primary">This file no longer exists</p><p className="mt-1 text-[11px] text-text-tertiary">{active.error}</p><div className="mt-2 flex gap-3"><button onClick={() => closeTab(active.id)} className="text-xs text-text-tertiary">Close tab</button><button onClick={() => updateTab(active.id, { state: "ready", error: null })} className="text-xs text-accent">Save as new file</button></div></div> : active.state === "loading" ? <EditorLoading /> : <div className="relative min-h-0 flex-1"><textarea aria-label={`Editor for ${active.name}`} readOnly={readOnly} value={active.content} onChange={(event) => updateTab(active.id, { content: event.target.value, dirty: true, saveState: "saved" })} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void beginSave(); } }} onSelect={(event) => { const value = event.currentTarget.value.slice(0, event.currentTarget.selectionStart); const lines = value.split("\n"); const lastLine = lines[lines.length - 1] ?? ""; setCursor({ line: lines.length, column: lastLine.length + 1 }); }} spellCheck={false} className="h-full w-full resize-none bg-bg-surface p-3 font-mono text-xs leading-5 text-text-primary outline-none selection:bg-accent-bg read-only:cursor-default read-only:opacity-80" /></div>}
+     {active.state === "binary" ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"><p className="text-sm text-text-primary">This file can&apos;t be edited here</p><button onClick={openFile} className="text-xs text-accent">Open another file</button></div> : active.state === "error-read" ? <div className="m-3 rounded-card border-l-2 border-status-danger bg-status-danger/10 p-3"><p className="text-xs font-medium text-text-primary">This file no longer exists</p><p className="mt-1 text-[11px] text-text-tertiary">{active.error}</p><div className="mt-2 flex gap-3"><button onClick={() => closeTab(active.id)} className="text-xs text-text-tertiary">Close tab</button><button onClick={() => updateTab(active.id, { state: "ready", error: null })} className="text-xs text-accent">Save as new file</button></div></div> : active.state === "loading" ? <EditorLoading /> : <div className="relative min-h-0 flex-1"><Suspense fallback={<div role="status" className="flex h-full items-center justify-center text-xs text-text-tertiary">Loading editor…</div>}><MonacoEditor value={active.content} language={language} path={active.id} readOnly={readOnly} onChange={(v) => updateTab(active.id, { content: v, dirty: true, saveState: "saved" })} onCursor={(line, column) => setCursor({ line, column })} onSave={() => saveRef.current()} /></Suspense></div>}
       <div className="flex h-6 shrink-0 items-center justify-between border-t border-bg-hover bg-bg-elevated px-3 text-[11px] text-text-tertiary"><span className="truncate">{active.name} <span className="mx-1">UTF-8</span> <span className="mx-1">{language}</span> <span className="mx-1">Ln {cursor.line}, Col {cursor.column}</span></span><span className={active.saveState === "error" ? "text-status-danger" : ""}>{active.saveState === "saving" ? "Saving..." : active.saveState === "error" ? "Couldn't save" : "Saved"}</span></div>
    </div>;
 }

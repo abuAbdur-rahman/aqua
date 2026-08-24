@@ -5,6 +5,7 @@ import { MissionControl } from "./MissionControl";
 import { WindowHost } from "../windows/WindowHost";
 import { useDaemonConnection } from "../lib/useDaemon";
 import { useWindowStore } from "../windows/store";
+import { useLayoutPersistence } from "../lib/useLayoutPersistence";
 import { SpotlightPane } from "../panes/SpotlightPane";
 
 export function Desktop() {
@@ -14,6 +15,8 @@ export function Desktop() {
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [missionControlOpen, setMissionControlOpen] = useState(false);
   const lastToggleRef = useRef(0);
+
+  useLayoutPersistence(state === "connected");
 
   useEffect(() => {
     const onEditor = (event: Event) => openEditor((event as CustomEvent<string>).detail);
