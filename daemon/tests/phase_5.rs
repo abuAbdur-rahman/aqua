@@ -1,4 +1,6 @@
-use aqua_daemon::router_with_fs_root;
+use std::time::Duration;
+
+use aqua_daemon::{router_with_fs_root, router_with_fs_root_and_shutdown};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -80,6 +82,28 @@ async fn layout_is_empty_then_round_trips_through_http() {
     );
 }
 
+#[tokio::test]
+async fn shutdown_endpoint_signals_graceful_shutdown() {
+    let root = tempdir().expect("temporary root should exist");
+    let (app, shutdown) = router_with_fs_root_and_shutdown(root.path().to_path_buf());
+    let signal = shutdown.signal();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/system/shutdown")
+                .body(Body::empty())
+                .expect("shutdown request should be valid"),
+        )
+        .await
+        .expect("shutdown should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), signal.notified())
+            .await
+            .is_ok()
+    );
+}
 #[tokio::test]
 async fn oversized_layout_body_is_rejected() {
     let root = tempdir().expect("temporary root should exist");

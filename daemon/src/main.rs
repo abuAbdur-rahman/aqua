@@ -19,17 +19,21 @@ async fn serve() -> Result<(), std::io::Error> {
     info!(%address, "Aqua daemon listening");
 
     let (router, shutdown) = router_with_shutdown();
+    let api_shutdown = shutdown.signal();
     axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(api_shutdown))
         .await?;
     shutdown.shutdown();
     Ok(())
 }
 
-async fn shutdown_signal() {
-    match signal::ctrl_c().await {
-        Ok(()) => info!("shutdown signal received"),
-        Err(error) => error!(%error, "failed to listen for shutdown signal"),
+async fn shutdown_signal(api_shutdown: std::sync::Arc<tokio::sync::Notify>) {
+    tokio::select! {
+        result = signal::ctrl_c() => match result {
+            Ok(()) => info!("shutdown signal received"),
+            Err(error) => error!(%error, "failed to listen for shutdown signal"),
+        },
+        _ = api_shutdown.notified() => info!("shutdown requested by API"),
     }
 }
 

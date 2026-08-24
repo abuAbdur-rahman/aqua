@@ -3,6 +3,7 @@ mod pty;
 mod search;
 mod state;
 mod sysmon;
+mod system;
 mod watch;
 
 use std::{
@@ -36,6 +37,7 @@ pub(crate) struct AppState {
     pub(crate) sysmon: sysmon::Manager,
     pub(crate) search: search::Manager,
     pub(crate) state: state::Store,
+    pub(crate) shutdown: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Clone)]
@@ -43,6 +45,7 @@ pub struct DaemonShutdown {
     pty: pty::SessionManager,
     sysmon: sysmon::Manager,
     search: search::Manager,
+    signal: Arc<tokio::sync::Notify>,
 }
 
 impl DaemonShutdown {
@@ -50,6 +53,10 @@ impl DaemonShutdown {
         self.pty.shutdown();
         self.sysmon.shutdown();
         self.search.shutdown();
+    }
+
+    pub fn signal(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.signal)
     }
 }
 
@@ -114,6 +121,7 @@ fn build_router(
     } else {
         state::Store::in_memory().expect("in-memory state database must be available")
     };
+    let shutdown_signal = Arc::new(tokio::sync::Notify::new());
     let state = AppState {
         version: Arc::from(env!("CARGO_PKG_VERSION")),
         fs_root: Arc::from(root),
@@ -122,6 +130,7 @@ fn build_router(
         sysmon: sysmon.clone(),
         search: search.clone(),
         state: state_store,
+        shutdown: Arc::clone(&shutdown_signal),
     };
     let router = Router::new()
         .route("/api/health", get(health))
@@ -131,6 +140,7 @@ fn build_router(
         .route("/api/fs/write", put(fs::write))
         .route("/api/search", get(search::query))
         .route("/api/state/layout", get(state_layout).put(state_layout_put))
+        .route("/api/system/shutdown", post(system::shutdown))
         .route("/api/pty/spawn", post(pty::spawn))
         .route("/ws/pty/{session_id}", get(pty::upgrade))
         .route("/ws/sysmon", get(sysmon::upgrade))
@@ -162,6 +172,7 @@ fn build_router(
             pty,
             sysmon,
             search,
+            signal: shutdown_signal,
         },
     )
 }
