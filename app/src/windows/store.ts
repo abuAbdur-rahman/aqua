@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { appManifest } from "./manifest";
 
+export interface SpaceRecord {
+  id: number;
+  name: string;
+}
+
 export interface WindowRecord {
   id: string;
   appId: string;
@@ -14,10 +19,13 @@ export interface WindowRecord {
   focused: boolean;
   prevBounds: { x: number; y: number; w: number; h: number } | null;
   maximized: boolean;
+  spaceId: number;
 }
 
 interface WindowState {
   windows: WindowRecord[];
+  spaces: SpaceRecord[];
+  activeSpaceId: number;
   nextZ: number;
   focusedId: string | null;
   openApp: (appId: string) => void;
@@ -28,6 +36,11 @@ interface WindowState {
   updateBounds: (id: string, b: Partial<Pick<WindowRecord, "x" | "y" | "w" | "h">>) => void;
   toggleMaximize: (id: string, container: { w: number; h: number }) => void;
   bringToFront: (id: string) => void;
+  switchSpace: (id: number) => void;
+  cycleSpace: (dir: 1 | -1) => void;
+  addSpace: () => void;
+  removeSpace: (id: number) => void;
+  moveWindowToSpace: (winId: string, spaceId: number) => void;
   editorPathRequest: string | null;
   finderPathRequest: string | null;
   terminalPathRequest: string | null;
@@ -46,6 +59,8 @@ function nextId() {
 
 export const useWindowStore = create<WindowState>((set, get) => ({
   windows: [],
+  spaces: [{ id: 1, name: "Desktop 1" }],
+  activeSpaceId: 1,
   nextZ: 10,
   focusedId: null,
   editorPathRequest: null,
@@ -55,7 +70,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   openApp: (appId) => {
     const manifest = appManifest[appId];
     if (!manifest) return;
-    const { windows, nextZ } = get();
+    const { windows, nextZ, activeSpaceId } = get();
     // If already open and minimized, restore instead of duplicating (single instance per app in Phase 1)
     const existing = windows.find((w) => w.appId === appId);
     if (existing) {
@@ -91,6 +106,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       focused: true,
       prevBounds: null,
       maximized: false,
+      spaceId: activeSpaceId,
     };
 
     set({
@@ -122,7 +138,9 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   close: (id) =>
     set((s) => {
       const remaining = s.windows.filter((w) => w.id !== id);
-      const nextFocus = remaining.length ? remaining.reduce((a, b) => (a.z > b.z ? a : b)).id : null;
+      const visible = remaining.filter((w) => w.spaceId === s.activeSpaceId);
+      const pool = visible.length ? visible : remaining;
+      const nextFocus = pool.length ? pool.reduce((a, b) => (a.z > b.z ? a : b)).id : null;
       return {
         windows: remaining.map((w) => ({ ...w, focused: w.id === nextFocus })),
         focusedId: nextFocus,
@@ -146,6 +164,73 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       return {
         windows: s.windows.map((w) => (w.id === id ? { ...w, z: s.nextZ } : w)),
         nextZ: s.nextZ + 1,
+      };
+    }),
+
+  switchSpace: (id) =>
+    set((s) => {
+      if (!s.spaces.some((sp) => sp.id === id) || s.activeSpaceId === id) return {};
+      const visible = s.windows.filter((w) => w.spaceId === id && !w.minimized);
+      const top = visible.length ? visible.reduce((a, b) => (a.z > b.z ? a : b)) : null;
+      return {
+        activeSpaceId: id,
+        windows: s.windows.map((w) => ({ ...w, focused: top != null && w.id === top.id })),
+        focusedId: top?.id ?? null,
+      };
+    }),
+
+  cycleSpace: (dir) => {
+    const { spaces, activeSpaceId } = get();
+    const idx = spaces.findIndex((sp) => sp.id === activeSpaceId);
+    const next = spaces[(idx + dir + spaces.length) % spaces.length];
+    get().switchSpace(next.id);
+  },
+
+  addSpace: () =>
+    set((s) => {
+      const id = Math.max(0, ...s.spaces.map((sp) => sp.id)) + 1;
+      return { spaces: [...s.spaces, { id, name: `Desktop ${s.spaces.length + 1}` }] };
+    }),
+
+  removeSpace: (id) =>
+    set((s) => {
+      // macOS behavior: never remove the last space; windows shift to the next
+      // space to the right, or the previous one when removing the rightmost.
+      if (s.spaces.length <= 1) return {};
+      const idx = s.spaces.findIndex((sp) => sp.id === id);
+      if (idx === -1) return {};
+      const target = s.spaces[idx + 1] ?? s.spaces[idx - 1];
+      const wasActive = s.activeSpaceId === id;
+      const spaces = s.spaces.filter((sp) => sp.id !== id);
+      const windows = s.windows.map((w) => (w.spaceId === id ? { ...w, spaceId: target.id } : w));
+      if (!wasActive) return { spaces, windows };
+      // Follow macOS: deleting the active space lands you on the destination.
+      const visible = windows.filter((w) => w.spaceId === target.id && !w.minimized);
+      const top = visible.length ? visible.reduce((a, b) => (a.z > b.z ? a : b)) : null;
+      return {
+        spaces,
+        windows: windows.map((w) => ({ ...w, focused: top != null && w.id === top.id })),
+        activeSpaceId: target.id,
+        focusedId: top?.id ?? null,
+      };
+    }),
+
+  moveWindowToSpace: (winId, spaceId) =>
+    set((s) => {
+      const win = s.windows.find((w) => w.id === winId);
+      if (!win || win.spaceId === spaceId || !s.spaces.some((sp) => sp.id === spaceId)) return {};
+      const movingToActive = spaceId === s.activeSpaceId;
+      const z = s.nextZ;
+      return {
+        windows: s.windows.map((w) =>
+          w.id === winId
+            ? { ...w, spaceId, z, focused: movingToActive, minimized: false }
+            : movingToActive
+              ? { ...w, focused: false }
+              : w,
+        ),
+        nextZ: z + 1,
+        focusedId: movingToActive ? winId : s.focusedId === winId ? null : s.focusedId,
       };
     }),
 

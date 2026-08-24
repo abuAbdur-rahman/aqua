@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FiFile, FiFolder, FiPlus, FiSave, FiX } from "react-icons/fi";
-import { readFile, writeFile } from "../lib/filesystem";
+import { createFile, readFile, writeFile } from "../lib/filesystem";
 import { editorFileState, languageForFile } from "../lib/editorFiles";
 import { useWindowStore } from "../windows/store";
 
@@ -113,6 +113,10 @@ export function EditorPane({ initialPath }: Props) {
     const trimmed = path.trim();
     updateTab(active.id, { saveState: "saving" });
     try {
+      // fs/write never creates files (contract) — create first. If the file
+      // already exists the create fails, which is fine: the write below is
+      // the operation that reports real errors.
+      await createFile(trimmed).catch(() => undefined);
       await writeFile(trimmed, active.content);
       updateTab(active.id, { path: trimmed, name: basename(trimmed), dirty: false, saveState: "saved" });
     } catch (cause: unknown) {

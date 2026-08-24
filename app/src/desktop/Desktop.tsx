@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MenuBar } from "./MenuBar";
 import { Dock } from "./Dock";
+import { MissionControl } from "./MissionControl";
 import { WindowHost } from "../windows/WindowHost";
 import { useDaemonConnection } from "../lib/useDaemon";
 import { useWindowStore } from "../windows/store";
@@ -11,6 +12,7 @@ export function Desktop() {
   const openEditor = useWindowStore((store) => store.openEditor);
   const openFinder = useWindowStore((store) => store.openFinder);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [missionControlOpen, setMissionControlOpen] = useState(false);
   const lastToggleRef = useRef(0);
 
   useEffect(() => {
@@ -64,6 +66,39 @@ export function Desktop() {
     };
   }, []);
 
+  useEffect(() => {
+    const onSpaceKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      // Don't hijack word-jump/undo-style editing keys inside text fields.
+      const target = e.target as HTMLElement | null;
+      const inText =
+        target != null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.closest(".monaco-editor") != null);
+      const store = useWindowStore.getState();
+      if (e.key === "ArrowLeft" && !inText) {
+        e.preventDefault();
+        store.cycleSpace(-1);
+      } else if (e.key === "ArrowRight" && !inText) {
+        e.preventDefault();
+        store.cycleSpace(1);
+      } else if (e.key === "ArrowUp" && !inText) {
+        e.preventDefault();
+        setMissionControlOpen((v) => !v);
+      } else if (/^[1-9]$/.test(e.key)) {
+        const space = store.spaces[Number(e.key) - 1];
+        if (space) {
+          e.preventDefault();
+          store.switchSpace(space.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onSpaceKey);
+    return () => window.removeEventListener("keydown", onSpaceKey);
+  }, []);
+
   return (
     <div className="fixed inset-0 m-0 p-0 bg-bg-base font-sans overflow-hidden select-none">
       <MenuBar daemonState={state} daemonVersion={version} wsConnected={wsConnected} />
@@ -86,6 +121,8 @@ export function Desktop() {
       <Dock />
 
       <SpotlightPane open={spotlightOpen} onClose={() => setSpotlightOpen(false)} />
+
+      <MissionControl open={missionControlOpen} onClose={() => setMissionControlOpen(false)} />
     </div>
   );
 }
