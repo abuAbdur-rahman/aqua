@@ -1,9 +1,10 @@
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
-    os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd},
+    os::fd::AsFd,
     os::unix::fs::PermissionsExt as _,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
+    sync::Arc,
     time::SystemTime,
 };
 
@@ -15,16 +16,19 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
-use rustix::fs::{
-    AtFlags, Mode, OFlags, ResolveFlags, fchmod, mkdirat, openat2, renameat, statat, unlinkat,
-};
+use rustix::fs::{AtFlags, Mode, OFlags, fchmod, mkdirat, openat2, renameat, statat, unlinkat};
 use serde::{Deserialize, Serialize};
 use tokio::task;
 
 use crate::AppState;
 
+pub(crate) mod safety;
+
 const READ_LIMIT: usize = 1024 * 1024;
-const RESOLVE_SAFE: ResolveFlags = ResolveFlags::BENEATH.union(ResolveFlags::NO_SYMLINKS);
+use safety::{
+    RESOLVE_SAFE, fd_path, file_from_fd, open_safe, reject_collision, reject_root, relative_path,
+    validate_final_name, validate_name,
+};
 
 #[derive(Deserialize)]
 pub(crate) struct PathQuery {
@@ -66,15 +70,55 @@ enum Encoding {
     Base64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum FsOp {
-    CreateFile { path: String },
-    CreateDir { path: String },
-    Rename { path: String, new_name: String },
-    Move { path: String, to: String },
-    Delete { path: String },
-    Chmod { path: String, mode: String },
+    CreateFile {
+        path: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    CreateDir {
+        path: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    Rename {
+        path: String,
+        new_name: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    Move {
+        path: String,
+        to: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    Delete {
+        path: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    Chmod {
+        path: String,
+        mode: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+}
+
+impl FsOp {
+    fn elevated(&self) -> bool {
+        match self {
+            Self::CreateFile { elevated, .. }
+            | Self::CreateDir { elevated, .. }
+            | Self::Rename { elevated, .. }
+            | Self::Move { elevated, .. }
+            | Self::Delete { elevated, .. }
+            | Self::Chmod { elevated, .. } => *elevated,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -87,8 +131,15 @@ pub struct FsWriteRequest {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum FsOpResponse {
-    Success { success: bool },
-    Failure { success: bool, error: String },
+    Success {
+        success: bool,
+    },
+    Failure {
+        success: bool,
+        error: String,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "needsElevation")]
+        needs_elevation: Option<bool>,
+    },
 }
 
 #[derive(Serialize)]
@@ -126,13 +177,18 @@ pub(crate) async fn operate(
     State(state): State<AppState>,
     Json(operation): Json<FsOp>,
 ) -> Response {
-    match run_blocking(state, move |state| apply_operation(&state, operation)).await {
+    match run_blocking(state, move |state| {
+        apply_operation_request(&state, operation)
+    })
+    .await
+    {
         Ok(()) => Json(FsOpResponse::Success { success: true }).into_response(),
         Err(error) => (
             error.status,
             Json(FsOpResponse::Failure {
                 success: false,
                 error: error.message,
+                needs_elevation: error.needs_elevation.then_some(true),
             }),
         )
             .into_response(),
@@ -231,15 +287,57 @@ fn write_sync(state: &AppState, request: FsWriteRequest) -> Result<DateTime<Utc>
         .into())
 }
 
-fn apply_operation(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
+pub fn run_privileged_operation(root: &Path, operation: FsOp) -> Result<(), ApiError> {
+    let root = fs::canonicalize(root).map_err(ApiError::from_io)?;
+    let root_file = File::open(&root).map_err(ApiError::from_io)?;
+    let root_fd = openat2(
+        &root_file,
+        ".",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+        safety::RESOLVE_SAFE,
+    )
+    .map_err(ApiError::from_io)?;
+    let context = FsContext {
+        fs_root: Arc::from(root),
+        fs_root_fd: Arc::new(file_from_fd(root_fd)),
+    };
+    apply_operation(&context, operation)
+}
+
+fn apply_operation_request(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
+    if operation.elevated() && !state.elevation.is_active() {
+        return Err(ApiError::elevation_required("elevation is required"));
+    }
+    if operation.elevated() {
+        return crate::system::run_elevated_fs(&state.elevation, &state.fs_root, &operation);
+    }
+    apply_operation(&FsContext::from_state(state), operation)
+}
+
+struct FsContext {
+    fs_root: Arc<Path>,
+    fs_root_fd: Arc<File>,
+}
+
+impl FsContext {
+    fn from_state(state: &AppState) -> Self {
+        Self {
+            fs_root: Arc::clone(&state.fs_root),
+            fs_root_fd: Arc::clone(&state.fs_root_fd),
+        }
+    }
+}
+
+fn apply_operation(context: &FsContext, operation: FsOp) -> Result<(), ApiError> {
     match operation {
-        FsOp::CreateFile { path } => {
-            let relative = relative_path(&state.fs_root, &path)?;
+        FsOp::CreateFile { path, .. } => {
+            let relative = relative_path(&context.fs_root, &path)?;
             reject_root(&relative)?;
             validate_final_name(&relative)?;
             let (parent, name) = parent_and_name(&relative)?;
             let parent_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
@@ -253,26 +351,26 @@ fn apply_operation(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
             .map_err(ApiError::from_io)?;
             drop(fd);
         }
-        FsOp::CreateDir { path } => {
-            let relative = relative_path(&state.fs_root, &path)?;
+        FsOp::CreateDir { path, .. } => {
+            let relative = relative_path(&context.fs_root, &path)?;
             reject_root(&relative)?;
             validate_final_name(&relative)?;
             let (parent, name) = parent_and_name(&relative)?;
             let parent_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
             mkdirat(&parent_fd, name, Mode::from_bits_truncate(0o777))
                 .map_err(ApiError::from_io)?;
         }
-        FsOp::Rename { path, new_name } => {
+        FsOp::Rename { path, new_name, .. } => {
             validate_name(&new_name)?;
-            let source = relative_path(&state.fs_root, &path)?;
+            let source = relative_path(&context.fs_root, &path)?;
             reject_root(&source)?;
             let (parent, name) = parent_and_name(&source)?;
             let parent_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
@@ -280,21 +378,21 @@ fn apply_operation(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
             renameat(&parent_fd, name, &parent_fd, Path::new(&new_name))
                 .map_err(ApiError::from_io)?;
         }
-        FsOp::Move { path, to } => {
-            let source = relative_path(&state.fs_root, &path)?;
-            let destination = relative_path(&state.fs_root, &to)?;
+        FsOp::Move { path, to, .. } => {
+            let source = relative_path(&context.fs_root, &path)?;
+            let destination = relative_path(&context.fs_root, &to)?;
             reject_root(&source)?;
             reject_root(&destination)?;
             validate_final_name(&destination)?;
             let (source_parent, source_name) = parent_and_name(&source)?;
             let (destination_parent, destination_name) = parent_and_name(&destination)?;
             let source_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 source_parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
             let destination_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 destination_parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
@@ -302,12 +400,12 @@ fn apply_operation(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
             renameat(&source_fd, source_name, &destination_fd, destination_name)
                 .map_err(ApiError::from_io)?;
         }
-        FsOp::Delete { path } => {
-            let relative = relative_path(&state.fs_root, &path)?;
+        FsOp::Delete { path, .. } => {
+            let relative = relative_path(&context.fs_root, &path)?;
             reject_root(&relative)?;
             let (parent, name) = parent_and_name(&relative)?;
             let parent_fd = open_safe(
-                &state.fs_root_fd,
+                &context.fs_root_fd,
                 parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
@@ -319,14 +417,14 @@ fn apply_operation(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
                 unlinkat(&parent_fd, name, AtFlags::empty()).map_err(ApiError::from_io)?;
             }
         }
-        FsOp::Chmod { path, mode } => {
-            let relative = relative_path(&state.fs_root, &path)?;
+        FsOp::Chmod { path, mode, .. } => {
+            let relative = relative_path(&context.fs_root, &path)?;
             let mode = u32::from_str_radix(&mode, 8)
                 .map_err(|_| ApiError::bad_request("mode must be an octal string"))?;
             if mode > 0o7777 {
                 return Err(ApiError::bad_request("mode is outside the supported range"));
             }
-            let fd = open_safe(&state.fs_root_fd, &relative, OFlags::RDONLY)?;
+            let fd = open_safe(&context.fs_root_fd, &relative, OFlags::RDONLY)?;
             fchmod(&fd, Mode::from_bits_truncate(mode)).map_err(ApiError::from_io)?;
         }
     }
@@ -355,17 +453,6 @@ pub(crate) async fn entry_for_watch(state: &AppState, path: PathBuf) -> Option<F
         path,
         metadata,
     ))
-}
-
-fn open_safe(root: &File, path: &Path, flags: OFlags) -> Result<OwnedFd, ApiError> {
-    openat2(
-        root,
-        path,
-        flags | OFlags::CLOEXEC,
-        Mode::empty(),
-        RESOLVE_SAFE,
-    )
-    .map_err(ApiError::from_io)
 }
 
 fn remove_directory_tree(parent: &impl AsFd, name: &Path) -> Result<(), ApiError> {
@@ -401,71 +488,6 @@ fn parent_and_name(path: &Path) -> Result<(&Path, &Path), ApiError> {
         _ => Path::new("."),
     };
     Ok((parent, Path::new(name)))
-}
-
-fn relative_path(root: &Path, requested: &str) -> Result<PathBuf, ApiError> {
-    let requested = Path::new(requested);
-    let relative = if requested.is_absolute() {
-        requested
-            .strip_prefix(root)
-            .map_err(|_| ApiError::forbidden("path is outside the allowed root"))?
-    } else {
-        requested
-    };
-    if relative.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
-        return Err(ApiError::forbidden("parent traversal is not allowed"));
-    }
-    Ok(if relative.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        relative.to_path_buf()
-    })
-}
-
-fn reject_root(path: &Path) -> Result<(), ApiError> {
-    if path == Path::new(".") {
-        Err(ApiError::forbidden("the allowed root cannot be modified"))
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_final_name(path: &Path) -> Result<(), ApiError> {
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| ApiError::bad_request("path must have a valid final component"))?;
-    validate_name(name)
-}
-
-fn validate_name(name: &str) -> Result<(), ApiError> {
-    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\0') {
-        Err(ApiError::bad_request("invalid file name"))
-    } else {
-        Ok(())
-    }
-}
-
-fn reject_collision(dir: &impl AsFd, path: &Path) -> Result<(), ApiError> {
-    match statat(dir, path, AtFlags::SYMLINK_NOFOLLOW) {
-        Ok(_) => Err(ApiError::conflict("destination already exists")),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(ApiError::from_io(error)),
-    }
-}
-
-fn fd_path(fd: &impl AsFd) -> PathBuf {
-    PathBuf::from(format!("/proc/self/fd/{}", fd.as_fd().as_raw_fd()))
-}
-
-fn file_from_fd(fd: OwnedFd) -> File {
-    // `OwnedFd` guarantees unique ownership of a valid file descriptor.
-    unsafe { File::from_raw_fd(fd.into_raw_fd()) }
 }
 
 fn entry_from_metadata(name: String, path: PathBuf, metadata: fs::Metadata) -> FsEntry {
@@ -517,6 +539,7 @@ struct ErrorResponse {
 pub struct ApiError {
     status: StatusCode,
     message: String,
+    needs_elevation: bool,
 }
 
 impl ApiError {
@@ -524,33 +547,45 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             message: message.into(),
+            needs_elevation: false,
         }
     }
-    fn forbidden(message: impl Into<String>) -> Self {
+    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::FORBIDDEN,
             message: message.into(),
+            needs_elevation: false,
+        }
+    }
+    pub(crate) fn elevation_required(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+            needs_elevation: true,
         }
     }
     fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::CONFLICT,
             message: message.into(),
+            needs_elevation: false,
         }
     }
     pub(crate) fn internal(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: message.into(),
+            needs_elevation: false,
         }
     }
     pub(crate) fn from_notify(error: notify::Error) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: error.to_string(),
+            needs_elevation: false,
         }
     }
-    pub(crate) fn message(&self) -> &str {
+    pub fn message(&self) -> &str {
         &self.message
     }
     fn from_io<E: Into<io::Error>>(error: E) -> Self {
@@ -567,6 +602,7 @@ impl ApiError {
         Self {
             status,
             message: error.to_string(),
+            needs_elevation: false,
         }
     }
 }

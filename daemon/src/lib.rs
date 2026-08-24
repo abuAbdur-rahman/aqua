@@ -1,4 +1,4 @@
-mod fs;
+pub mod fs;
 mod pty;
 mod search;
 mod state;
@@ -37,6 +37,7 @@ pub(crate) struct AppState {
     pub(crate) sysmon: sysmon::Manager,
     pub(crate) search: search::Manager,
     pub(crate) state: state::Store,
+    pub(crate) elevation: system::Elevation,
     pub(crate) shutdown: Arc<tokio::sync::Notify>,
 }
 
@@ -80,13 +81,13 @@ pub fn daemon_addr() -> SocketAddr {
 pub fn router() -> Router {
     let home = env::var_os("HOME").expect("HOME must be set for filesystem access");
     let root = std::fs::canonicalize(home).expect("HOME must reference an existing directory");
-    build_router(root, false, true).0
+    build_router(root, false, true, system::Elevation::default()).0
 }
 
 pub fn router_with_shutdown() -> (Router, DaemonShutdown) {
     let home = env::var_os("HOME").expect("HOME must be set for filesystem access");
     let root = std::fs::canonicalize(home).expect("HOME must reference an existing directory");
-    build_router(root, true, true)
+    build_router(root, true, true, system::Elevation::default())
 }
 
 pub fn router_with_fs_root(root: PathBuf) -> Router {
@@ -94,13 +95,28 @@ pub fn router_with_fs_root(root: PathBuf) -> Router {
 }
 
 pub fn router_with_fs_root_and_shutdown(root: PathBuf) -> (Router, DaemonShutdown) {
-    build_router(root, false, false)
+    build_router(root, false, false, system::Elevation::default())
+}
+
+pub fn router_with_fs_root_and_elevation(
+    root: PathBuf,
+    sudo_command: PathBuf,
+    helper_executable: PathBuf,
+) -> Router {
+    build_router(
+        root,
+        false,
+        false,
+        system::Elevation::with_commands(sudo_command, helper_executable),
+    )
+    .0
 }
 
 fn build_router(
     root: PathBuf,
     start_indexer: bool,
     persistent_state: bool,
+    elevation: system::Elevation,
 ) -> (Router, DaemonShutdown) {
     let root =
         std::fs::canonicalize(root).expect("filesystem root must reference an existing directory");
@@ -130,6 +146,7 @@ fn build_router(
         sysmon: sysmon.clone(),
         search: search.clone(),
         state: state_store,
+        elevation,
         shutdown: Arc::clone(&shutdown_signal),
     };
     let router = Router::new()
@@ -140,6 +157,7 @@ fn build_router(
         .route("/api/fs/write", put(fs::write))
         .route("/api/search", get(search::query))
         .route("/api/state/layout", get(state_layout).put(state_layout_put))
+        .route("/api/system/elevate", post(system::elevate))
         .route("/api/system/shutdown", post(system::shutdown))
         .route("/api/pty/spawn", post(pty::spawn))
         .route("/ws/pty/{session_id}", get(pty::upgrade))
