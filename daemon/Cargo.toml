@@ -11,6 +11,7 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 futures-util = "0.3"
 notify = "8"
+rusqlite = { version = "0.32", features = ["bundled"] }
 tantivy = "0.25"
 walkdir = "2"
 portable-pty = "0.9"
