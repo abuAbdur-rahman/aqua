@@ -95,6 +95,31 @@ body {
   box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
+/* Text-entry surfaces get a quiet 1px ring — the 2px + halo signature ring is
+   for buttons and selectable rows, it reads too loud wrapping a text caret. */
+input:focus-visible,
+textarea:focus-visible,
+[contenteditable="true"]:focus-visible {
+  outline: 1px solid var(--accent-ring);
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+/* Chrome-less search fields (Spotlight): the panel itself is the affordance,
+   the caret is the focus indicator — nothing wraps the input. */
+.input-bare:focus,
+.input-bare:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Monaco draws its own caret; the global ring on its internals just doubles it. */
+.monaco-editor :focus-visible,
+.monaco-editor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

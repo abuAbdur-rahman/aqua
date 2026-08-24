@@ -3,7 +3,8 @@
 
 use std::process::Command;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use thiserror::Error;
 use tokio::time::sleep;
 
@@ -89,6 +90,25 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![greet])
         .setup(|app| {
+            use std::sync::Mutex;
+            use std::time::{Duration, Instant};
+            // Key autorepeat re-fires the shortcut ~every 30ms while held; a deliberate
+            // second press is never within 300ms of the previous one. Latch collapses
+            // autorepeat bursts into a single toggle so the palette can't flicker shut.
+            let last_toggle = Mutex::new(Instant::now() - Duration::from_millis(1000));
+            app.global_shortcut().on_shortcut("Ctrl+Shift+Space", move |app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    let mut last = last_toggle.lock().unwrap();
+                    if last.elapsed() < Duration::from_millis(300) {
+                        return;
+                    }
+                    *last = Instant::now();
+                    drop(last);
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.emit("spotlight-toggle", ());
+                    }
+                }
+            })?;
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = setup_daemon(app_handle).await {

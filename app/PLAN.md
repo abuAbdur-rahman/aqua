@@ -104,6 +104,26 @@ app/frontend/src/
 
 **App-as-plugin pattern:** each app registers a manifest — icon, default window size, menu bar config, dock behavior. `WindowManager` and `Dock` are generic and know nothing about specific apps, so adding one later (Preview, Notification Center) is additive, not invasive.
 
+**Menu dispatch contract (`APPEND_V3.md` §1):** "menu bar config" is concrete — each window supplies `menus: AppMenuGroup[]`, rendered by the Menu Bar with clicks dispatched straight to `onSelect()` closures:
+
+```ts
+interface AppMenuItem {
+  id: string;              // stable id, e.g. "file.save" — used for shortcut registration, not for lookup
+  label: string;
+  shortcut?: string;        // e.g. "Ctrl+S" — displayed in the menu AND registered as a live keybinding
+  onSelect: () => void;     // the actual handler — a real closure, never a string looked up elsewhere
+  enabled?: boolean;        // default true; false renders grayed-out and non-interactive, item stays visible
+  separatorAfter?: boolean;
+}
+
+interface AppMenuGroup {
+  label: string;   // "File", "Edit", "View", ...
+  items: AppMenuItem[];
+}
+```
+
+Critical rule: `menus` is supplied **per open window instance, not per app type.** Two Editor windows each build their own array with `onSelect` closures bound to that window's own file/buffer — no shared static definition across instances, or every window's Save ends up saving the wrong buffer.
+
 ## 6. API contract this app consumes
 
 Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.

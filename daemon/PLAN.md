@@ -90,6 +90,7 @@ daemon/
 | `GET /api/search?q=` | REST | Spotlight query — files, apps, quick actions merged |
 | `GET /api/state/layout` | REST | Load saved window/space layout |
 | `PUT /api/state/layout` | REST | Persist layout |
+| `POST /api/system/shutdown` | REST | Graceful shutdown — close pty sessions cleanly, flush state, then exit |
 
 Changing this contract means updating `../CONTRACT.md` and `../app/PLAN.md` §6 too — `../CONTRACT.md` is the one either side should code against.
 
@@ -138,6 +139,7 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 - The real attack surface — "any browser tab can blind-`fetch()` an unauthenticated shell" — is closed on the app side by using a dedicated Tauri window instead of a general browser (see app doc §2). This daemon still shouldn't assume that's the only line of defense.
 - Validate and canonicalize every filesystem path server-side — stay inside intended roots, resolve symlinks correctly. This is about correctness (not deleting the wrong thing on a traversal bug), not access control.
 - Optional hardening: reject requests whose `Origin` header isn't Aqua's app origin, in case anything else on the machine ever probes this port.
+- `POST /api/system/shutdown` has no confirmation step of its own at the daemon level — the confirmation already happens once, at the UI layer (`UI-SPEC-08-Modals.md`'s Confirmation Modal), before this call is ever made. The daemon executes it unconditionally on receipt.
 
 ## 10. Roadmap
 
@@ -159,6 +161,7 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 | `notify` event storms on large directory ops (e.g. `git checkout`) | Debounce fs-watch events per-path before broadcasting |
 | Path traversal / symlink escape in `fs/op` | Canonicalize + validate every path against allowed roots before touching disk |
 | Spotlight full reindex cost on large trees | Incremental updates via fs-watch; full reindex only on explicit request or startup |
+| Hard-killing the daemon process (bypassing graceful shutdown) leaves orphaned pty child processes in WSL | Tauri host always attempts `POST /api/system/shutdown` first and gives it a short grace period before falling back to a force-kill; force-kill is the exception path, not the default |
 
 ## 12. Immediate next step
 

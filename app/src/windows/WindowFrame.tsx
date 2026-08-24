@@ -6,7 +6,6 @@ import { FinderPane } from "../panes/FinderPane";
 import { TerminalPane } from "../panes/TerminalPane";
 import { ActivityPane } from "../panes/ActivityPane";
 import { EditorPane } from "../panes/EditorPane";
-import { SpotlightPane } from "../panes/SpotlightPane";
 
 type Props = {
   win: WindowRecord;
@@ -232,8 +231,7 @@ export function WindowFrame({ win, containerRef }: Props) {
         {win.appId === "terminal" && <TerminalPane />}
         {win.appId === "activity" && <ActivityPane />}
         {win.appId === "editor" && <EditorPane />}
-        {win.appId === "spotlight" && <SpotlightPane open />}
-        {!["finder", "terminal", "activity", "editor", "spotlight"].includes(win.appId) && (
+        {!["finder", "terminal", "activity", "editor"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />
         )}
       </div>

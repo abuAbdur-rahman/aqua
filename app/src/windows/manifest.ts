@@ -5,7 +5,6 @@ export interface AppManifestEntry {
   defaultSize: { w: number; h: number };
   minSize: { w: number; h: number };
   menus: string[];
-  dockHideDot?: boolean;
 }
 
 export const appManifest: Record<string, AppManifestEntry> = {
@@ -40,14 +39,5 @@ export const appManifest: Record<string, AppManifestEntry> = {
     defaultSize: { w: 640, h: 460 },
     minSize: { w: 400, h: 300 },
     menus: ["View", "Window"],
-  },
-  spotlight: {
-    id: "spotlight",
-    name: "Spotlight",
-    icon: "/icons/icon-spotlight.svg",
-    defaultSize: { w: 560, h: 320 },
-    minSize: { w: 360, h: 240 },
-    menus: [],
-    dockHideDot: true,
   },
 };

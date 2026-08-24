@@ -88,19 +88,22 @@ Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a change. The two wor
 
 ## Current status
 
-Backend Phases 0–3 are complete and verified. Backend Phase 4 – Spotlight search – is complete and pushed, including bounded Tantivy indexing, filename/content search, app metadata, calculator and unit-conversion actions, debounced incremental updates, in-memory index recovery, and focused tests.
+Backend Phases 0–4 are complete and verified (foundation, Finder, Terminal, Activity Monitor, Spotlight search backend).
 
-The next active work is **App Phase 6 – Spotlight UI and global hotkey**. The app should consume `GET /api/search?q=` using the shapes in [`CONTRACT.md`](./CONTRACT.md), follow [`app/Phases/6.md`](./app/Phases/6.md), and preserve the existing app ownership boundary. Windows-to-WSL reachability for the new Spotlight path still needs verification from the native Windows app environment.
+On the app side, Phases 0–6 are complete: Tauri scaffold with daemon spawn/health-check and CSP wiring, window manager core with OS chrome per `UI-SPEC-01`, Finder filesystem workspace, Terminal PTY sessions via `/ws/pty/:sessionId`, Activity Monitor streaming via `/ws/sysmon`, a Monaco-based Editor linked to Finder/Terminal, and the Spotlight palette — debounced `GET /api/search?q=` with grouped Apps→Files→Actions results, keyboard selection, and a system-wide Ctrl+Shift+Space global shortcut via `tauri-plugin-global-shortcut` (verified end-to-end from the native Windows app against the live daemon).
 
-Backend Phase 5 persistence and Backend Phase 6 hardening remain future work.
+The next active work is **App Phase 7 – Spaces** (see [`app/Phases/7.md`](./app/Phases/7.md)). Backend Phase 5 persistence and Backend Phase 6 hardening remain future work.
+
+Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet.
 
 ## Build order
 
-Build backend capabilities before the UI that consumes them. The current handoff is Backend Phase 4 complete → App Phase 6 Spotlight UI.
+Build backend capabilities before the UI that consumes them. The current handoff is App Phase 6 complete → App Phase 7 Spaces.
 
 - [x] Backend Phases 0–3 – foundation, Finder, Terminal, Activity Monitor
 - [x] Backend Phase 4 – Spotlight search backend
-- [ ] App Phase 6 – Spotlight UI and global hotkey
+- [x] App Phases 0–5 – scaffold, chrome, window manager, Finder, Terminal, Activity Monitor, Editor
+- [x] App Phase 6 – Spotlight UI and global hotkey
 - [ ] App Phase 7 – Spaces
 - [ ] Backend Phase 5 – Persistence
 - [ ] App Phase 8 – Polish and persistence wiring

@@ -17,7 +17,9 @@ Height `24px` (`DESIGN.md`), full width, `--bg-elevated`, sits above everything 
   ^app icon+name   ^app menus (per focused app)        ^status  ^connection ^clock
 ```
 
-**Left cluster:** focused app's icon (16px) + name in `--text-primary`, then that app's menu items in `--text-secondary`, `--text-primary` on hover with `--bg-hover` pill behind the label. Menu config comes from the app's manifest (per `../PLAN.md` §5 "app-as-plugin pattern") — Menu Bar itself renders whatever the focused app declares, it owns none of these labels.
+**Left cluster:** focused app's icon (16px) + name in `--text-primary`, then that app's menu items in `--text-secondary`, `--text-primary` on hover with `--bg-hover` pill behind the label. Menu config comes from the focused window itself (per `../PLAN.md` §5 "app-as-plugin pattern" and the `APPEND_V3.md` §1 dispatch contract) — Menu Bar itself renders whatever the focused app declares, it owns none of these labels.
+
+**Dispatch mechanism (`APPEND_V3.md` §1):** on every focus change, read the newly-focused window's own `menus: AppMenuGroup[]` (carried on that window's entry in `windowStore`, not fetched from any app-level table) and render it directly. Clicking a rendered `AppMenuItem` calls its `onSelect()` **directly** — no string-based action registry, no lookup table in between. Keyboard shortcuts: on every focus change, deregister the previously-focused window's shortcut set and register the newly-focused one's, walking every item with a `shortcut` field; also deregister when a window closes, not just on blur — a shortcut left bound to a dead window silently does nothing (or worse, acts on the wrong buffer).
 
 **Right cluster**, left to right:
 1. Optional per-app quick indicators (e.g. Activity Monitor's live CPU %, if that app declares one)

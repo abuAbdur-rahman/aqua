@@ -1,13 +1,17 @@
+import { useEffect, useRef, useState } from "react";
 import { MenuBar } from "./MenuBar";
 import { Dock } from "./Dock";
 import { WindowHost } from "../windows/WindowHost";
 import { useDaemonConnection } from "../lib/useDaemon";
 import { useWindowStore } from "../windows/store";
+import { SpotlightPane } from "../panes/SpotlightPane";
 
 export function Desktop() {
   const { state, version, wsConnected } = useDaemonConnection();
   const openEditor = useWindowStore((store) => store.openEditor);
   const openFinder = useWindowStore((store) => store.openFinder);
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const lastToggleRef = useRef(0);
 
   useEffect(() => {
     const onEditor = (event: Event) => openEditor((event as CustomEvent<string>).detail);
@@ -19,6 +23,46 @@ export function Desktop() {
       window.removeEventListener("aqua:open-finder", onFinder);
     };
   }, [openEditor, openFinder]);
+
+  useEffect(() => {
+    // In Tauri the Rust host owns the global shortcut and emits `spotlight-toggle`;
+    // attaching the JS fallback there too would double-toggle (open + instant close).
+    const inTauri = "__TAURI_INTERNALS__" in window;
+    let unlisten: (() => void) | undefined;
+    // StrictMode mounts→unmounts→mounts in dev. If cleanup runs before the async
+    // listen() resolves, the resolved listener must be removed immediately or it
+    // leaks — a leaked duplicate makes every toggle fire twice (open + close).
+    let disposed = false;
+
+    if (inTauri) {
+      void import("@tauri-apps/api/event")
+        .then(({ listen }) => listen("spotlight-toggle", () => setSpotlightOpen((v) => !v)))
+        .then((fn) => {
+          if (disposed) {
+            fn();
+            return;
+          }
+          unlisten = fn;
+        })
+        .catch(() => {});
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (!inTauri && e.ctrlKey && e.shiftKey && e.code === "Space") {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastToggleRef.current < 300) return;
+        lastToggleRef.current = now;
+        setSpotlightOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      disposed = true;
+      unlisten?.();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 m-0 p-0 bg-bg-base font-sans overflow-hidden select-none">
@@ -40,7 +84,8 @@ export function Desktop() {
       </div>
 
       <Dock />
+
+      <SpotlightPane open={spotlightOpen} onClose={() => setSpotlightOpen(false)} />
     </div>
   );
 }
-import { useEffect } from "react";

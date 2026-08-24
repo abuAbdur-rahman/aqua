@@ -259,6 +259,14 @@ interface SpaceState {
 
 ## System & Wallpaper
 
+### Shutdown
+
+```ts
+type ShutdownResponse = { success: true };
+```
+
+`POST /api/system/shutdown` — no body. The daemon stops accepting new connections, closes every active pty session cleanly (SIGTERM to each shell child, brief grace period, SIGKILL anything still alive after it — the same cleanup `/ws/pty` disconnect already does, just invoked proactively here instead of reactively), closes WS connections, flushes pending SQLite writes, then exits its own process. The HTTP response fires immediately on receipt (`{ success: true }` means "shutdown started," not "shutdown complete") — the caller (Tauri host) confirms actual completion by polling for the child process to exit, not by anything in this response.
+
 ### Elevation
 
 ```ts
@@ -321,6 +329,7 @@ Built-in wallpaper IDs are frontend-owned and cannot be deleted through the daem
 | Path | Type | Purpose |
 |---|---|---|
 | `POST /api/system/elevate` | REST | Validate the sudo password and cache elevation |
+| `POST /api/system/shutdown` | REST | Graceful shutdown — close pty sessions cleanly, flush state, then exit |
 | `GET /api/wallpaper` | REST | Current selection and custom wallpaper list |
 | `PUT /api/wallpaper` | REST | Set the current wallpaper; body `{ id: string }` |
 | `POST /api/wallpaper/upload` | REST | Upload a custom wallpaper image |

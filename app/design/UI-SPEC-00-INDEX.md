@@ -17,6 +17,8 @@ Read `app/AGENTS.md` and `DESIGN.md` before any of these. These specs assume bot
 | `UI-SPEC-07-SystemMenu.md` | System Menu and lifecycle actions |
 | `UI-SPEC-08-Modals.md` | Shared confirmation and sudo elevation modals |
 | `UI-SPEC-09-Settings.md` | Settings, appearance, wallpaper, daemon, and About panes |
+| `UI-SPEC-10-FilePicker.md` | Open/Save file-picker sheet shared by Editor, Settings' wallpaper picker, and future callers |
+| `UI-SPEC-11-Greeter.md` | Boot Greeter — pre-daemon startup/health-check screen with retry state |
 
 ## Conventions used across every spec
 

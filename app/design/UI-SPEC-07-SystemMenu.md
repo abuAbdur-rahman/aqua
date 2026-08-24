@@ -52,3 +52,23 @@ Three groups, separated by hairline dividers (`1px`, 8% white) — grouped by *c
 ## States
 
 Only one state worth designing for: **daemon unreachable when the menu opens.** "Restart Daemon" and "About Aqua"'s version line both degrade gracefully — Restart Daemon's label just changes to "Start Daemon" (since there's nothing running to kill, only to spawn), no error shown, since a daemon being down is already surfaced globally by the Menu Bar's connection dot.
+
+## Command bindings (`APPEND_V3.md` §1)
+
+The menu's items split into two kinds, and only the second needs anything beyond a normal frontend handler:
+
+- **Frontend-only** (no Tauri command needed): About Aqua, Settings…, Force Quit…, Sleep Display — pure `windowStore`/UI actions.
+- **Real Tauri commands** (named here for the first time; if they were never added on the Rust side, these three items are no-ops regardless of how correct the frontend click handling is):
+
+```rust
+#[tauri::command]
+async fn restart_daemon() -> Result<(), String> { /* graceful shutdown, then respawn */ }
+
+#[tauri::command]
+async fn relaunch_aqua() -> Result<(), String> { /* graceful daemon shutdown, then app relaunch */ }
+
+#[tauri::command]
+async fn quit_and_stop_daemon() -> Result<(), String> { /* graceful daemon shutdown, then app quit */ }
+```
+
+Frontend calls these via `invoke("restart_daemon")` etc. (`@tauri-apps/api/core`). **Restart Daemon**, **Restart Aqua**, and **Shut Down Aqua** bind to these three specifically. The shutdown-then-respawn sequence (graceful `POST /api/system/shutdown` first, force-kill only as fallback) is specified in `APPEND_V3.md` §2.

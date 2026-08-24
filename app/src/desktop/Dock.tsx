@@ -19,7 +19,6 @@ const DOCK_ORDER: DockItem[] = [
   { id: "terminal", label: "Terminal", icon: appManifest.terminal.icon },
   { id: "editor", label: "Editor", icon: appManifest.editor.icon },
   { id: "activity", label: "Activity", icon: appManifest.activity.icon },
-  { id: "spotlight", label: "Spotlight", icon: appManifest.spotlight.icon },
 ];
 
 function DockIcon({
