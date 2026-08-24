@@ -2,13 +2,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use thiserror::Error;
 use tokio::time::sleep;
+
+const DAEMON_HEALTH_URL: &str = "http://localhost:61234/api/health";
+const DAEMON_SHUTDOWN_URL: &str = "http://localhost:61234/api/system/shutdown";
+
+struct DaemonChild(Mutex<Option<std::process::Child>>);
 
 #[derive(Debug, Error)]
 enum DaemonError {
@@ -40,22 +46,51 @@ async fn discover_default_distro() -> Result<String, DaemonError> {
     Ok(distro)
 }
 
-async fn spawn_daemon(distro: &str) -> Result<(), DaemonError> {
-    let home = std::env::var("USERPROFILE").unwrap_or_default();
-    let daemon_path = format!("{}/projects/aqua/daemon", home).replace('\\', "/");
+// Resolve the daemon's directory *inside* the distro. Windows and WSL users
+// differ, so USERPROFILE-based guesses are wrong; probe known layouts under
+// the WSL user's home, with AQUA_DAEMON_DIR as an explicit override.
+async fn resolve_daemon_dir(distro: &str) -> Result<String, DaemonError> {
+    if let Ok(dir) = std::env::var("AQUA_DAEMON_DIR") {
+        if !dir.is_empty() {
+            return Ok(dir);
+        }
+    }
 
+    let who = Command::new("wsl.exe")
+        .args(["-d", distro, "--", "whoami"])
+        .output()
+        .map_err(|e| DaemonError::WslUnavailable(e.to_string()))?;
+    let user = String::from_utf8_lossy(&who.stdout).trim().to_string();
+
+    let candidates = [
+        format!("/home/{user}/projects/Self/aqua/daemon"),
+        format!("/home/{user}/projects/aqua/daemon"),
+    ];
+    for candidate in candidates {
+        let probe = Command::new("wsl.exe")
+            .args(["-d", distro, "--", "test", "-d", &candidate])
+            .output();
+        if probe.map(|o| o.status.success()).unwrap_or(false) {
+            return Ok(candidate);
+        }
+    }
+
+    Err(DaemonError::SpawnFailed(
+        "daemon directory not found in distro — set AQUA_DAEMON_DIR to its WSL path".to_string(),
+    ))
+}
+
+async fn spawn_daemon(distro: &str, dir: &str) -> Result<std::process::Child, DaemonError> {
     Command::new("wsl.exe")
-        .args(["-d", distro, "--", "cargo", "run", "--manifest-path", &format!("{}/Cargo.toml", daemon_path)])
+        .args(["-d", distro, "--", "cargo", "run", "--release", "--manifest-path", &format!("{dir}/Cargo.toml")])
         .spawn()
-        .map_err(|e| DaemonError::SpawnFailed(e.to_string()))?;
-
-    Ok(())
+        .map_err(|e| DaemonError::SpawnFailed(e.to_string()))
 }
 
 async fn wait_for_health(_app: AppHandle, max_retries: u32, interval_ms: u64) -> Result<(), DaemonError> {
     let client = reqwest::Client::new();
     for _ in 0..max_retries {
-        match client.get("http://localhost:61234/api/health").send().await {
+        match client.get(DAEMON_HEALTH_URL).send().await {
             Ok(resp) if resp.status().is_success() => return Ok(()),
             _ => sleep(Duration::from_millis(interval_ms)).await,
         }
@@ -63,20 +98,99 @@ async fn wait_for_health(_app: AppHandle, max_retries: u32, interval_ms: u64) ->
     Err(DaemonError::Timeout)
 }
 
+// Graceful shutdown per APPEND_V3.md §2: POST /api/system/shutdown first,
+// poll for the daemon to go down (~3s), force-kill the host-side child only
+// as the fallback. Killing wsl.exe is best-effort — it does not reach
+// processes already running inside the distro.
+async fn stop_daemon(child_state: &State<'_, DaemonChild>) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let _ = client.post(DAEMON_SHUTDOWN_URL).send().await;
+
+    for _ in 0..15 {
+        match client.get(DAEMON_HEALTH_URL).send().await {
+            Ok(resp) if resp.status().is_success() => sleep(Duration::from_millis(200)).await,
+            _ => break,
+        }
+    }
+
+    if let Some(mut child) = child_state.0.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+fn store_child(app: &AppHandle, child: std::process::Child) {
+    // If a previous handle was still tracked, don't leak it.
+    let state = app.state::<DaemonChild>();
+    let mut slot = state.0.lock().unwrap();
+    if let Some(mut old) = slot.take() {
+        let _ = old.kill();
+        let _ = old.wait();
+    }
+    *slot = Some(child);
+}
+
+// The window starts hidden (visible: false in tauri.conf.json) and must be
+// shown no matter how daemon startup ends — a failed health check still gets
+// the desktop UI with its "Daemon offline" indicator, never an invisible app.
 async fn setup_daemon(app: AppHandle) -> Result<(), DaemonError> {
+    let result = start_daemon(&app).await;
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_decorations(false);
+    }
+
+    result
+}
+
+async fn start_daemon(app: &AppHandle) -> Result<(), DaemonError> {
     let distro = discover_default_distro().await?;
 
     if wait_for_health(app.clone(), 1, 0).await.is_err() {
-        spawn_daemon(&distro).await?;
+        let dir = resolve_daemon_dir(&distro).await?;
+        let child = spawn_daemon(&distro, &dir).await?;
+        store_child(app, child);
         wait_for_health(app.clone(), 25, 200).await?;
     }
 
-    if let Some(window) = app.get_webview_window("main") {
-        window.show().map_err(|e| DaemonError::SpawnFailed(e.to_string()))?;
-        window.set_decorations(false).ok();
-    }
-
     Ok(())
+}
+
+#[tauri::command]
+async fn restart_daemon(app: AppHandle) -> Result<(), String> {
+    stop_daemon(&app.state::<DaemonChild>()).await?;
+    let distro = discover_default_distro().await.map_err(|e| e.to_string())?;
+    let dir = resolve_daemon_dir(&distro).await.map_err(|e| e.to_string())?;
+    // cargo may recompile after a daemon-side change, so allow a longer
+    // health window than first launch.
+    let child = spawn_daemon(&distro, &dir).await.map_err(|e| e.to_string())?;
+    store_child(&app, child);
+    wait_for_health(app.clone(), 100, 200).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn relaunch_aqua(app: AppHandle) -> Result<(), String> {
+    stop_daemon(&app.state::<DaemonChild>()).await?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    Command::new(exe)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+async fn quit_and_stop_daemon(app: AppHandle) -> Result<(), String> {
+    stop_daemon(&app.state::<DaemonChild>()).await?;
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_distro() -> Result<String, String> {
+    discover_default_distro().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -123,15 +237,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro])
+        .manage(DaemonChild(Mutex::new(None)))
         .setup(|app| {
-            use std::sync::Mutex;
             use std::time::{Duration, Instant};
             // Key autorepeat re-fires the shortcut ~every 30ms while held; a deliberate
             // second press is never within 300ms of the previous one. Latch collapses
             // autorepeat bursts into a single toggle so the palette can't flicker shut.
             let last_toggle = Mutex::new(Instant::now() - Duration::from_millis(1000));
-            app.global_shortcut().on_shortcut("Ctrl+Shift+Space", move |app, _shortcut, event| {
+            // A stale registration (e.g. a lingering previous dev instance still
+            // holding Ctrl+Shift+Space) must not take the whole app down —
+            // degrade to "no global shortcut" instead of panicking in setup.
+            if let Err(e) = app.global_shortcut().on_shortcut("Ctrl+Shift+Space", move |app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
                     let mut last = last_toggle.lock().unwrap();
                     if last.elapsed() < Duration::from_millis(300) {
@@ -143,7 +260,9 @@ pub fn run() {
                         let _ = window.emit("spotlight-toggle", ());
                     }
                 }
-            })?;
+            }) {
+                eprintln!("Global shortcut unavailable: {}", e);
+            }
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = setup_daemon(app_handle).await {

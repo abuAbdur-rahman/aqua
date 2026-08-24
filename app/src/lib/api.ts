@@ -19,6 +19,38 @@ export function wsUrl(path: string): string {
   return `ws://localhost:61234${path}`;
 }
 
+export type ElevateResponse =
+  | { success: true; expiresAt: string }
+  | { success: false; error: string };
+
+export function parseElevateResponse(value: unknown): ElevateResponse {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "success" in value &&
+    typeof (value as Record<string, unknown>).success === "boolean"
+  ) {
+    const res = value as Record<string, unknown>;
+    if (res.success === true && typeof res.expiresAt === "string") {
+      return { success: true, expiresAt: res.expiresAt };
+    }
+    if (res.success === false && typeof res.error === "string") {
+      return { success: false, error: res.error };
+    }
+  }
+  throw new Error("Daemon returned an invalid elevation response");
+}
+
+export async function elevate(password: string): Promise<ElevateResponse> {
+  const res = await fetch(`${DAEMON_BASE}/api/system/elevate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ password }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return parseElevateResponse(await res.json());
+}
+
 export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${DAEMON_BASE}${path}`, {
     ...init,

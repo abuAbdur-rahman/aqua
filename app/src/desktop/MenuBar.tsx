@@ -4,6 +4,7 @@ import { FiMonitor } from "react-icons/fi";
 import { appManifest } from "../windows/manifest";
 import { useWindowStore } from "../windows/store";
 import { buildAppMenus } from "./menus";
+import { SystemMenu } from "./SystemMenu";
 import type { AppMenuGroup } from "./menuTypes";
 
 interface MenuBarProps {
@@ -127,8 +128,9 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
       role="menubar"
       aria-label="Aqua menu bar"
     >
-      {/* Left cluster: focused app icon+name + menus */}
+      {/* Left cluster: system menu + focused app icon+name + menus */}
       <div className="flex items-center gap-3">
+        <SystemMenu daemonState={daemonState} daemonVersion={daemonVersion} />
         <span className="flex items-center gap-1.5">
           {focusedApp ? (
             <img src={focusedApp.icon} alt="" className="h-4 w-4 object-contain" aria-hidden="true" />

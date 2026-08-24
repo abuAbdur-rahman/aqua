@@ -19,12 +19,23 @@ export interface FsReadResponse {
 }
 
 export type FsOp =
-  | { op: "createFile"; path: string }
-  | { op: "createDir"; path: string }
-  | { op: "rename"; path: string; newName: string }
-  | { op: "move"; path: string; to: string }
-  | { op: "delete"; path: string }
-  | { op: "chmod"; path: string; mode: string };
+  | { op: "createFile"; path: string; elevated?: boolean }
+  | { op: "createDir"; path: string; elevated?: boolean }
+  | { op: "rename"; path: string; newName: string; elevated?: boolean }
+  | { op: "move"; path: string; to: string; elevated?: boolean }
+  | { op: "delete"; path: string; elevated?: boolean }
+  | { op: "chmod"; path: string; mode: string; elevated?: boolean };
+
+export class NeedsElevationError extends Error {
+  constructor(
+    message: string,
+    readonly op: string,
+    readonly path: string,
+  ) {
+    super(message);
+    this.name = "NeedsElevationError";
+  }
+}
 
 export type FsWatchEvent = {
   type: "change";
@@ -106,25 +117,38 @@ async function runOperation(operation: FsOp): Promise<void> {
     method: "POST",
     body: JSON.stringify(operation),
   });
+  if (typeof payload === "object" && payload !== null && (payload as Record<string, unknown>).success === false) {
+    const body = payload as Record<string, unknown>;
+    if (body.needsElevation === true) {
+      throw new NeedsElevationError(
+        typeof body.error === "string" ? body.error : "This operation requires elevation",
+        operation.op,
+        operation.path,
+      );
+    }
+    throw new Error(typeof body.error === "string" ? body.error : "Operation failed");
+  }
   if (!isRecord(payload) || payload.success !== true) {
     throw new Error("Daemon returned an invalid operation response");
   }
 }
 
-export function createFile(path: string) {
-  return runOperation({ op: "createFile", path });
+export function createFile(path: string, elevated = false) {
+  return runOperation(elevated ? { op: "createFile", path, elevated } : { op: "createFile", path });
 }
 
-export function createDirectory(path: string) {
-  return runOperation({ op: "createDir", path });
+export function createDirectory(path: string, elevated = false) {
+  return runOperation(elevated ? { op: "createDir", path, elevated } : { op: "createDir", path });
 }
 
-export function renameEntry(path: string, newName: string) {
-  return runOperation({ op: "rename", path, newName });
+export function renameEntry(path: string, newName: string, elevated = false) {
+  return runOperation(
+    elevated ? { op: "rename", path, newName, elevated } : { op: "rename", path, newName },
+  );
 }
 
-export function deleteEntry(path: string) {
-  return runOperation({ op: "delete", path });
+export function deleteEntry(path: string, elevated = false) {
+  return runOperation(elevated ? { op: "delete", path, elevated } : { op: "delete", path });
 }
 
 export async function writeFile(path: string, content: string): Promise<string> {

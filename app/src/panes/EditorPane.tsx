@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react"
 import { FiFile, FiFolder, FiPlus, FiSave, FiX } from "react-icons/fi";
 import { createFile, readFile, writeFile } from "../lib/filesystem";
 import { editorFileState, languageForFile } from "../lib/editorFiles";
+import { useModalStore } from "../system/modalStore";
 import { useWindowStore } from "../windows/store";
 
 // Monaco is heavy; load the editor only when an Editor window actually opens.
@@ -60,6 +61,9 @@ export function EditorPane({ initialPath }: Props) {
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
   const editorPathRequest = useWindowStore((state) => state.editorPathRequest);
   const clearEditorPathRequest = useWindowStore((state) => state.clearEditorPathRequest);
+  const requestConfirm = useModalStore((s) => s.requestConfirm);
+  const requestPrompt = useModalStore((s) => s.requestPrompt);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const updateTab = useCallback((id: string, update: Partial<EditorTab>) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...update } : tab));
@@ -109,48 +113,77 @@ export function EditorPane({ initialPath }: Props) {
     }
   }, [active, updateTab]);
 
-  const beginSave = async () => {
+  const saveAsUntitled = useCallback((activeTab: EditorTab, trimmed: string) => {
+    updateTab(activeTab.id, { saveState: "saving" });
+    // fs/write never creates files (contract) — create first. If the file
+    // already exists the create fails, which is fine: the write below is
+    // the operation that reports real errors.
+    createFile(trimmed)
+      .catch(() => undefined)
+      .then(() => writeFile(trimmed, activeTab.content))
+      .then(() => {
+        updateTab(activeTab.id, { path: trimmed, name: basename(trimmed), dirty: false, saveState: "saved" });
+        setSaveError(null);
+      })
+      .catch((cause: unknown) => {
+        updateTab(activeTab.id, { saveState: "error" });
+        setSaveError(cause instanceof Error ? cause.message : "Couldn't save file");
+      });
+  }, [updateTab]);
+
+  const beginSave = () => {
+    if (!active) return;
     if (active.path !== "untitled") {
-      await save();
+      void save();
       return;
     }
-    const path = window.prompt("Save file as", "/home/abdulazeez/untitled.txt");
-    if (!path?.trim()) return;
-    const trimmed = path.trim();
-    updateTab(active.id, { saveState: "saving" });
-    try {
-      // fs/write never creates files (contract) — create first. If the file
-      // already exists the create fails, which is fine: the write below is
-      // the operation that reports real errors.
-      await createFile(trimmed).catch(() => undefined);
-      await writeFile(trimmed, active.content);
-      updateTab(active.id, { path: trimmed, name: basename(trimmed), dirty: false, saveState: "saved" });
-    } catch (cause: unknown) {
-      updateTab(active.id, { saveState: "error" });
-      window.alert(cause instanceof Error ? cause.message : "Couldn't save file");
-    }
+    requestPrompt({
+      title: "Save File As",
+      label: "Path",
+      initialValue: "/home/abdulazeez/untitled.txt",
+      submitLabel: "Save",
+      onSubmit: (trimmed) => saveAsUntitled(active, trimmed),
+    });
   };
 
   const openFile = () => {
-    const path = window.prompt("Open file path");
-    if (!path?.trim()) return;
-    const existing = tabs.find((tab) => tab.path === path.trim());
-    if (existing) {
-      setActiveId(existing.id);
-      return;
-    }
-    const tab = newTab(path.trim());
-    setTabs((current) => [...current, tab]);
-    setActiveId(tab.id);
+    requestPrompt({
+      title: "Open File",
+      label: "Path",
+      submitLabel: "Open",
+      onSubmit: (trimmed) => {
+        const existing = tabs.find((tab) => tab.path === trimmed);
+        if (existing) {
+          setActiveId(existing.id);
+          return;
+        }
+        const tab = newTab(trimmed);
+        setTabs((current) => [...current, tab]);
+        setActiveId(tab.id);
+      },
+    });
   };
 
   const closeTab = (id: string) => {
     const tab = tabs.find((item) => item.id === id);
-    if (!tab || (tab.dirty && !window.confirm(`Discard unsaved changes in ${tab.name}?`))) return;
-    const remaining = tabs.filter((item) => item.id !== id);
-    const next = remaining.length ? remaining : [newTab()];
-    setTabs(next);
-    if (activeId === id) setActiveId(next[0].id);
+    if (!tab) return;
+    const discard = () => {
+      const remaining = tabs.filter((item) => item.id !== id);
+      const next = remaining.length ? remaining : [newTab()];
+      setTabs(next);
+      if (activeId === id) setActiveId(next[0].id);
+    };
+    if (!tab.dirty) {
+      discard();
+      return;
+    }
+    requestConfirm({
+      title: `Discard unsaved changes in ${tab.name}?`,
+      body: "Closing this tab loses unsaved edits.",
+      confirmLabel: "Discard",
+      danger: true,
+      onConfirm: discard,
+    });
   };
 
   // Keep the latest save handler reachable from Monaco's Ctrl+S command,
@@ -182,6 +215,6 @@ export function EditorPane({ initialPath }: Props) {
      {editorFileState(active.path) === "uneditable" && active.path !== "untitled" && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is uneditable. Editing and saving are disabled.</div>}
      {active.truncated && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is large — showing the first portion. Editing and saving are disabled.</div>}
      {active.state === "binary" ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"><p className="text-sm text-text-primary">This file can&apos;t be edited here</p><button onClick={openFile} className="text-xs text-accent">Open another file</button></div> : active.state === "error-read" ? <div className="m-3 rounded-card border-l-2 border-status-danger bg-status-danger/10 p-3"><p className="text-xs font-medium text-text-primary">This file no longer exists</p><p className="mt-1 text-[11px] text-text-tertiary">{active.error}</p><div className="mt-2 flex gap-3"><button onClick={() => closeTab(active.id)} className="text-xs text-text-tertiary">Close tab</button><button onClick={() => updateTab(active.id, { state: "ready", error: null })} className="text-xs text-accent">Save as new file</button></div></div> : active.state === "loading" ? <EditorLoading /> : <div className="relative min-h-0 flex-1"><Suspense fallback={<div role="status" className="flex h-full items-center justify-center text-xs text-text-tertiary">Loading editor…</div>}><MonacoEditor value={active.content} language={language} path={active.id} readOnly={readOnly} onChange={(v) => updateTab(active.id, { content: v, dirty: true, saveState: "saved" })} onCursor={(line, column) => setCursor({ line, column })} onSave={() => saveRef.current()} /></Suspense></div>}
-      <div className="flex h-6 shrink-0 items-center justify-between border-t border-bg-hover bg-bg-elevated px-3 text-[11px] text-text-tertiary"><span className="truncate">{active.name} <span className="mx-1">UTF-8</span> <span className="mx-1">{language}</span> <span className="mx-1">Ln {cursor.line}, Col {cursor.column}</span></span><span className={active.saveState === "error" ? "text-status-danger" : ""}>{active.saveState === "saving" ? "Saving..." : active.saveState === "error" ? "Couldn't save" : "Saved"}</span></div>
+      <div className="flex h-6 shrink-0 items-center justify-between border-t border-bg-hover bg-bg-elevated px-3 text-[11px] text-text-tertiary"><span className="truncate">{active.name} <span className="mx-1">UTF-8</span> <span className="mx-1">{language}</span> <span className="mx-1">Ln {cursor.line}, Col {cursor.column}</span></span><span title={saveError ?? undefined} className={active.saveState === "error" ? "text-status-danger" : ""}>{active.saveState === "saving" ? "Saving..." : active.saveState === "error" ? (saveError ?? "Couldn't save") : "Saved"}</span></div>
    </div>;
 }

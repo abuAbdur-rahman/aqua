@@ -23,11 +23,13 @@ import {
   createFile,
   deleteEntry,
   listDirectory,
+  NeedsElevationError,
   readFile,
   renameEntry,
   type FsEntry,
 } from "../lib/filesystem";
 import { useFsWatch } from "../lib/useFsWatch";
+import { useModalStore } from "../system/modalStore";
 import { useWindowStore } from "../windows/store";
 
 type ViewMode = "list" | "icons";
@@ -96,6 +98,25 @@ export function FinderPane() {
   const openTerminal = useWindowStore((state) => state.openApp);
   const finderPathRequest = useWindowStore((state) => state.finderPathRequest);
   const clearFinderPathRequest = useWindowStore((state) => state.clearFinderPathRequest);
+  const requestElevate = useModalStore((s) => s.requestElevate);
+  const requestConfirm = useModalStore((s) => s.requestConfirm);
+  const requestPrompt = useModalStore((s) => s.requestPrompt);
+
+  // On needsElevation, open the shared ElevateModal and retry the same op
+  // with elevated: true once authentication succeeds.
+  const handleNeedsElevation = (cause: unknown, detail: string, retry: () => Promise<void>, fallback: string): boolean => {
+    if (!(cause instanceof NeedsElevationError)) return false;
+    requestElevate({
+      appName: "Finder",
+      detail: `${detail} requires your password.`,
+      onSuccess: () => {
+        void retry().catch((retryCause: unknown) =>
+          setError(retryCause instanceof Error ? retryCause.message : fallback),
+        );
+      },
+    });
+    return true;
+  };
 
   useEffect(() => {
     if (finderPathRequest) {
@@ -200,26 +221,38 @@ export function FinderPane() {
     void selectEntry(entry);
   };
 
-  const newFolder = async () => {
-    const name = window.prompt("New folder name");
-    if (!name?.trim()) return;
-    try {
-      await createDirectory(`${path.replace(/\/$/, "")}/${name.trim()}`);
-      await load();
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Couldn't create folder");
-    }
+  const newFolder = () => {
+    requestPrompt({
+      title: "New Folder",
+      label: "Folder name",
+      submitLabel: "Create",
+      onSubmit: (name) => {
+        const target = `${path.replace(/\/$/, "")}/${name}`;
+        void createDirectory(target)
+          .then(() => load())
+          .catch((cause: unknown) => {
+            if (handleNeedsElevation(cause, `createDir ${target}`, async () => { await createDirectory(target, true); await load(); }, "Couldn't create folder")) return;
+            setError(cause instanceof Error ? cause.message : "Couldn't create folder");
+          });
+      },
+    });
   };
 
-  const newFile = async () => {
-    const name = window.prompt("New file name");
-    if (!name?.trim()) return;
-    try {
-      await createFile(`${path.replace(/\/$/, "")}/${name.trim()}`);
-      await load();
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Couldn't create file");
-    }
+  const newFile = () => {
+    requestPrompt({
+      title: "New File",
+      label: "File name",
+      submitLabel: "Create",
+      onSubmit: (name) => {
+        const target = `${path.replace(/\/$/, "")}/${name}`;
+        void createFile(target)
+          .then(() => load())
+          .catch((cause: unknown) => {
+            if (handleNeedsElevation(cause, `createFile ${target}`, async () => { await createFile(target, true); await load(); }, "Couldn't create file")) return;
+            setError(cause instanceof Error ? cause.message : "Couldn't create file");
+          });
+      },
+    });
   };
 
   const showMenu = (event: React.MouseEvent, entry: FsEntry | null) => {
@@ -228,28 +261,44 @@ export function FinderPane() {
     setMenu({ x: event.clientX, y: event.clientY, entry });
   };
 
-  const rename = async () => {
+  const rename = () => {
     if (!selected) return;
-    const name = window.prompt("Rename", selected.name);
-    if (!name?.trim() || name.trim() === selected.name) return;
-    try {
-      await renameEntry(selected.path, name.trim());
-      await load();
-    } catch (cause: unknown) {
-      setError(cause instanceof ApiError && cause.status === 409 ? "That name is already in use" : cause instanceof Error ? cause.message : "Couldn't rename item");
-    }
+    requestPrompt({
+      title: "Rename",
+      label: "New name",
+      initialValue: selected.name,
+      submitLabel: "Rename",
+      onSubmit: (name) => {
+        void renameEntry(selected.path, name)
+          .then(() => load())
+          .catch((cause: unknown) => {
+            if (handleNeedsElevation(cause, `rename ${selected.path} → ${name}`, async () => { await renameEntry(selected.path, name, true); await load(); }, "Couldn't rename item")) return;
+            setError(cause instanceof ApiError && cause.status === 409 ? "That name is already in use" : cause instanceof Error ? cause.message : "Couldn't rename item");
+          });
+      },
+    });
   };
 
-  const remove = async () => {
-    if (!selected || !window.confirm(`Delete ${selected.name} permanently?`)) return;
-    try {
-      await deleteEntry(selected.path);
-      setSelectedPath(null);
-      setPreview(null);
-      await load();
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Couldn't delete item");
-    }
+  const remove = () => {
+    if (!selected) return;
+    requestConfirm({
+      title: `Delete “${selected.name}” permanently?`,
+      body: `${selected.path} will be removed from disk.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        void deleteEntry(selected.path)
+          .then(() => {
+            setSelectedPath(null);
+            setPreview(null);
+            return load();
+          })
+          .catch((cause: unknown) => {
+            if (handleNeedsElevation(cause, `delete ${selected.path}`, async () => { await deleteEntry(selected.path, true); setSelectedPath(null); setPreview(null); await load(); }, "Couldn't delete item")) return;
+            setError(cause instanceof Error ? cause.message : "Couldn't delete item");
+          });
+      },
+    });
   };
 
   const toggleSort = (key: keyof FsEntry) => {

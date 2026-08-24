@@ -7,6 +7,7 @@ import { useDaemonConnection } from "../lib/useDaemon";
 import { useWindowStore } from "../windows/store";
 import { useLayoutPersistence } from "../lib/useLayoutPersistence";
 import { SpotlightPane } from "../panes/SpotlightPane";
+import { ModalHost } from "../system/ModalHost";
 
 export function Desktop() {
   const { state, version, wsConnected } = useDaemonConnection();
@@ -126,6 +127,8 @@ export function Desktop() {
       <SpotlightPane open={spotlightOpen} onClose={() => setSpotlightOpen(false)} />
 
       <MissionControl open={missionControlOpen} onClose={() => setMissionControlOpen(false)} />
+
+      <ModalHost />
     </div>
   );
 }
