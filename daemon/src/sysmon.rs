@@ -185,7 +185,10 @@ fn collect_stats(system: &System, disks: &Disks) -> Stats {
 
 pub(crate) async fn upgrade(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     let receiver = state.sysmon.subscribe();
-    upgrade.on_upgrade(move |socket| socket_loop(socket, receiver))
+    upgrade
+        .max_message_size(crate::MAX_SYSMON_MESSAGE_BYTES)
+        .max_frame_size(crate::MAX_SYSMON_MESSAGE_BYTES)
+        .on_upgrade(move |socket| socket_loop(socket, receiver))
 }
 
 async fn socket_loop(mut socket: WebSocket, mut receiver: Subscription) {

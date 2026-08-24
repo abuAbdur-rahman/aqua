@@ -13,6 +13,7 @@ futures-util = "0.3"
 notify = "8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tantivy = "0.25"
+tower = { version = "0.5", features = ["limit"] }
 walkdir = "2"
 portable-pty = "0.9"
 rustix = { version = "1", features = ["fs"] }

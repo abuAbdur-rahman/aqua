@@ -81,6 +81,30 @@ async fn layout_is_empty_then_round_trips_through_http() {
 }
 
 #[tokio::test]
+async fn oversized_layout_body_is_rejected() {
+    let root = tempdir().expect("temporary root should exist");
+    let app = router_with_fs_root(root.path().to_path_buf());
+    let body = serde_json::json!({
+        "windows": [],
+        "spaces": [],
+        "padding": "x".repeat(2 * 1024 * 1024),
+    })
+    .to_string();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/state/layout")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .expect("PUT request should be valid"),
+        )
+        .await
+        .expect("PUT should respond");
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
 async fn invalid_layout_does_not_replace_existing_state() {
     let root = tempdir().expect("temporary root should exist");
     let app = router_with_fs_root(root.path().to_path_buf());

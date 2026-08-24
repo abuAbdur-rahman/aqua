@@ -31,6 +31,7 @@ const ATTACH_TIMEOUT: Duration = Duration::from_secs(30);
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
 const POLICY_ERROR: u16 = 1008;
+const MAX_PTY_MESSAGE_BYTES: usize = 1024 * 1024;
 const ALLOWED_ORIGINS: [&str; 2] = ["http://tauri.localhost", "http://localhost:1420"];
 
 type PtyWriter = Arc<Mutex<Box<dyn Write + Send>>>;
@@ -234,7 +235,10 @@ pub(crate) async fn upgrade(
         .pty
         .attach(id)
         .ok_or_else(|| PtyError::not_found("PTY session not found"))?;
-    Ok(upgrade.on_upgrade(move |socket| bridge(socket, id, session, shutdown)))
+    Ok(upgrade
+        .max_message_size(MAX_PTY_MESSAGE_BYTES)
+        .max_frame_size(MAX_PTY_MESSAGE_BYTES)
+        .on_upgrade(move |socket| bridge(socket, id, session, shutdown)))
 }
 
 fn validate_origin(headers: &HeaderMap) -> Result<(), PtyError> {

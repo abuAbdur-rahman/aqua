@@ -15,7 +15,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{
-        State, WebSocketUpgrade,
+        DefaultBodyLimit, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     response::Response,
@@ -23,6 +23,7 @@ use axum::{
 };
 use rustix::fs::{OFlags, ResolveFlags, openat2};
 use serde::Serialize;
+use tower::{ServiceBuilder, limit::ConcurrencyLimitLayer};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{debug, warn};
 
@@ -59,6 +60,11 @@ struct HealthResponse {
 }
 
 pub const DAEMON_PORT: u16 = 61_234;
+const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_ECHO_MESSAGE_BYTES: usize = 1024 * 1024;
+const MAX_WATCH_MESSAGE_BYTES: usize = 16 * 1024;
+const MAX_SYSMON_MESSAGE_BYTES: usize = 16 * 1024;
+const MAX_CONCURRENT_REQUESTS: usize = 128;
 
 pub fn daemon_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], DAEMON_PORT))
@@ -130,6 +136,8 @@ fn build_router(
         .route("/ws/sysmon", get(sysmon::upgrade))
         .route("/ws/fs-watch", get(watch_upgrade))
         .route("/ws/echo", get(echo_upgrade))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .layer(ServiceBuilder::new().layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS)))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::list([
@@ -209,11 +217,17 @@ impl axum::response::IntoResponse for StateResponseError {
 }
 
 async fn watch_upgrade(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| watch::socket(socket, state))
+    upgrade
+        .max_message_size(MAX_WATCH_MESSAGE_BYTES)
+        .max_frame_size(MAX_WATCH_MESSAGE_BYTES)
+        .on_upgrade(move |socket| watch::socket(socket, state))
 }
 
 async fn echo_upgrade(upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(echo_socket)
+    upgrade
+        .max_message_size(MAX_ECHO_MESSAGE_BYTES)
+        .max_frame_size(MAX_ECHO_MESSAGE_BYTES)
+        .on_upgrade(echo_socket)
 }
 
 async fn echo_socket(mut socket: WebSocket) {

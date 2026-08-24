@@ -23,7 +23,7 @@ If implementation and `../CONTRACT.md` disagree, stop and resolve the contract d
 - Keep route names and payloads synchronized with `../CONTRACT.md`.
 - Treat the daemon as security-sensitive: it will eventually control files and unrestricted PTY sessions.
 - Do not implement filesystem mutation until allowed roots, traversal handling, and symlink behavior are explicitly defined.
-- Do not treat CORS or localhost binding as authentication. Authentication and Origin policy require an explicit project decision before privileged endpoints ship.
+- Do not treat CORS or localhost binding as authentication. Aqua's approved security model is localhost-only with no request authentication; exact Origin checks provide browser hardening for the dedicated Tauri WebView.
 
 ## Implementation rules
 
