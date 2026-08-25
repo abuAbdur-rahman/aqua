@@ -188,6 +188,36 @@ async fn deleting_unknown_or_builtin_id_fails() {
 }
 
 #[tokio::test]
+async fn wallpaper_delete_preflight_is_allowed_for_tauri_origin() {
+    let root = tempdir().expect("temporary root should exist");
+    let response = router_with_fs_root(root.path().to_path_buf())
+        .oneshot(
+            Request::builder()
+                .method("OPTIONS")
+                .uri("/api/wallpaper/test-id")
+                .header("origin", "http://tauri.localhost")
+                .header("access-control-request-method", "DELETE")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(response.status().is_success());
+    assert_eq!(
+        response.headers()["access-control-allow-origin"],
+        "http://tauri.localhost"
+    );
+    assert!(
+        response.headers()["access-control-allow-methods"]
+            .to_str()
+            .unwrap()
+            .split(',')
+            .any(|method| method.trim() == "DELETE")
+    );
+}
+
+#[tokio::test]
 async fn invalid_upload_is_rejected() {
     let root = tempdir().expect("temporary root should exist");
     let app = router_with_fs_root(root.path().to_path_buf());
