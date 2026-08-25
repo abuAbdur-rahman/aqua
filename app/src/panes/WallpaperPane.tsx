@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { FiCheck, FiLoader, FiPlus, FiTrash2, FiX } from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { FiCheck, FiLoader, FiPlus, FiTrash2 } from "react-icons/fi";
 import {
   BUILTIN_WALLPAPERS,
   useWallpaperStore,
 } from "./wallpaperStore";
 import { wallpaperAssetUrl, type CustomWallpaper } from "../lib/api";
 import { useModalStore } from "../system/modalStore";
-import { pickImage } from "../system/pickImage";
+import { pickImages } from "../system/pickImage";
+import { toast } from "../system/toast";
 
-type UploadState = "idle" | "picking" | "uploading" | "error";
+type UploadState = { kind: "idle" } | { kind: "uploading"; done: number; total: number };
 
 export function WallpaperPane() {
   const current = useWallpaperStore((s) => s.current);
@@ -20,49 +21,40 @@ export function WallpaperPane() {
   const remove = useWallpaperStore((s) => s.remove);
 
   const requestConfirm = useModalStore((s) => s.requestConfirm);
-  const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [notice, setNotice] = useState<string | null>(null);
-  const errorTimer = useRef<number | null>(null);
+  const [uploadState, setUploadState] = useState<UploadState>({ kind: "idle" });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "idle") void load();
   }, [status, load]);
 
-  useEffect(() => {
-    return () => {
-      if (errorTimer.current != null) window.clearTimeout(errorTimer.current);
-    };
-  }, []);
-
-  const flashError = (message: string) => {
-    setNotice(message);
-    if (errorTimer.current != null) window.clearTimeout(errorTimer.current);
-    // Low-stakes failure: show briefly next to the "+" tile, then move on.
-    errorTimer.current = window.setTimeout(() => setNotice(null), 2000);
-  };
-
   const onPickTileClick = async () => {
-    if (uploadState !== "idle") return;
-    setUploadState("picking");
-    try {
-      const picked = await pickImage();
-      if (!picked) {
-        setUploadState("idle");
-        return;
+    if (uploadState.kind !== "idle") return;
+    const picked = await pickImages();
+    if (picked.length === 0) return;
+    setUploadState({ kind: "uploading", done: 0, total: picked.length });
+    const failed: string[] = [];
+    for (const [index, item] of picked.entries()) {
+      try {
+        await upload(item.blob, item.label);
+      } catch (cause) {
+        failed.push(cause instanceof Error ? cause.message : `“${item.label}”`);
       }
-      setUploadState("uploading");
-      await upload(picked.blob, picked.label);
-      setUploadState("idle");
-    } catch (cause) {
-      setUploadState("error");
-      flashError(cause instanceof Error ? cause.message : "Upload failed.");
-      window.setTimeout(() => setUploadState("idle"), 2000);
+      setUploadState({ kind: "uploading", done: index + 1, total: picked.length });
+    }
+    setUploadState({ kind: "idle" });
+    if (failed.length > 0) {
+      toast.error(failed.length === 1 ? failed[0] : `${failed.length} uploads failed.`);
+    }
+    const created = picked.length - failed.length;
+    if (created > 0) {
+      toast.success(created === 1 ? `Created “${picked[0]?.label}”.` : `Created ${created} wallpapers.`);
     }
   };
 
   const onSelect = async (id: string, label: string) => {
     const applied = await select(id);
-    if (!applied) flashError(`Couldn't apply “${label}”.`);
+    if (!applied) toast.error(`Couldn't apply “${label}”.`);
   };
 
   const onDelete = (wallpaper: CustomWallpaper) => {
@@ -72,7 +64,11 @@ export function WallpaperPane() {
       confirmLabel: "Delete",
       danger: true,
       onConfirm: () => {
-        remove(wallpaper.id).catch(() => flashError(`Couldn't delete “${wallpaper.label}”.`));
+        setDeletingId(wallpaper.id);
+        remove(wallpaper.id)
+          .then(() => toast.success(`Deleted “${wallpaper.label}”.`))
+          .catch(() => toast.error(`Couldn't delete “${wallpaper.label}”.`))
+          .finally(() => setDeletingId(null));
       },
     });
   };
@@ -106,6 +102,7 @@ export function WallpaperPane() {
               onClick={() => void onSelect(wallpaper.id, wallpaper.label)}
               deleteBadge
               onDelete={() => onDelete(wallpaper)}
+              deleting={deletingId === wallpaper.id}
             />
           </li>
         ))}
@@ -113,24 +110,22 @@ export function WallpaperPane() {
           <button
             onClick={() => void onPickTileClick()}
             disabled={status === "error"}
-            aria-label="Add a custom wallpaper"
-            className={`group relative flex aspect-square w-full items-center justify-center rounded-lg border border-dashed bg-transparent text-text-tertiary transition-colors hover:border-accent/50 hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-accent ${
-              uploadState === "error" ? "border-status-danger text-status-danger" : "border-bg-hover"
-            }`}
+            aria-label="Add custom wallpapers"
+            className={`group relative flex aspect-square w-full items-center justify-center rounded-lg border border-dashed border-bg-hover bg-transparent text-text-tertiary transition-colors hover:border-accent/50 hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-accent`}
           >
-            {uploadState === "uploading" ? (
-              <FiLoader className="h-5 w-5 animate-spin" aria-hidden="true" />
-            ) : uploadState === "error" ? (
-              <FiX className="h-5 w-5" aria-hidden="true" />
+            {uploadState.kind === "uploading" ? (
+              <span className="flex flex-col items-center gap-1" role="status" aria-label={`Uploading ${uploadState.done} of ${uploadState.total}`}>
+                <FiLoader className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <span className="text-[10px] tabular-nums text-text-tertiary">
+                  {uploadState.done}/{uploadState.total}
+                </span>
+              </span>
             ) : (
               <FiPlus className="h-5 w-5" aria-hidden="true" />
             )}
           </button>
         </li>
       </ul>
-      <p className="mt-2 h-4 text-[11px] text-status-danger" role="status">
-        {notice}
-      </p>
     </section>
   );
 }
@@ -143,6 +138,7 @@ function Tile({
   onClick,
   deleteBadge,
   onDelete,
+  deleting = false,
 }: {
   label: string;
   selected: boolean;
@@ -151,41 +147,62 @@ function Tile({
   onClick: () => void;
   deleteBadge?: boolean;
   onDelete?: () => void;
+  deleting?: boolean;
 }) {
   return (
-    <div className="group relative">
-      <button
-        onClick={onClick}
-        aria-label={`${label}${selected ? ", current wallpaper" : ""}`}
-        aria-pressed={selected}
-        title={label}
-        style={background}
-        className={`block aspect-square w-full rounded-lg transition-shadow focus-visible:outline-2 focus-visible:outline-accent ${
-          selected && showSelection ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-surface" : ""
+    <div className="group" aria-busy={deleting || undefined}>
+      <div className="relative">
+        <button
+          onClick={onClick}
+          disabled={deleting}
+          aria-label={`${label}${selected ? ", current wallpaper" : ""}`}
+          aria-pressed={selected}
+          title={label}
+          style={background}
+          className={`block aspect-square w-full rounded-lg transition-shadow focus-visible:outline-2 focus-visible:outline-accent ${
+            selected && showSelection ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-surface" : ""
+          }`}
+        >
+          {/* visual tile — the gradient/image lives on the button's own background */}
+        </button>
+        {selected && showSelection && (
+          <span
+            className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-bg-base"
+            aria-hidden="true"
+          >
+            <FiCheck className="h-3 w-3" />
+          </span>
+        )}
+        {deleting && (
+          <span
+            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/40"
+            role="status"
+            aria-label={`Deleting ${label}`}
+          >
+            <FiLoader className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
+          </span>
+        )}
+        {deleteBadge && onDelete && !deleting && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            aria-label={`Delete ${label}`}
+            className="absolute left-1 top-1 hidden rounded p-1 text-text-secondary hover:bg-status-danger hover:text-white group-hover:flex focus-visible:flex focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <FiTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {/* Persistent name under each tile — hover-only tooltips don't differentiate a grid. */}
+      <p
+        className={`mt-1 truncate text-center text-[10px] leading-tight ${
+          selected ? "font-medium text-accent" : "text-text-tertiary"
         }`}
       >
-        {/* visual tile — the gradient/image lives on the button's own background */}
-      </button>
-      {selected && showSelection && (
-        <span
-          className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-bg-base"
-          aria-hidden="true"
-        >
-          <FiCheck className="h-3 w-3" />
-        </span>
-      )}
-      {deleteBadge && onDelete && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          aria-label={`Delete ${label}`}
-          className="absolute left-1 top-1 hidden rounded p-1 text-text-secondary group-hover:flex hover:bg-status-danger hover:text-white focus-visible:flex focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          <FiTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-      )}
+        {label}
+      </p>
     </div>
   );
 }

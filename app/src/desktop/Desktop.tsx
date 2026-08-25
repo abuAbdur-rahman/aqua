@@ -8,6 +8,7 @@ import { useWindowStore } from "../windows/store";
 import { useLayoutPersistence } from "../lib/useLayoutPersistence";
 import { SpotlightPane } from "../panes/SpotlightPane";
 import { ModalHost } from "../system/ModalHost";
+import { ToastHost } from "../system/toast";
 import { Wallpaper } from "./Wallpaper";
 
 export function Desktop() {
@@ -124,6 +125,7 @@ export function Desktop() {
       <MissionControl open={missionControlOpen} onClose={() => setMissionControlOpen(false)} />
 
       <ModalHost />
+      <ToastHost />
     </div>
   );
 }

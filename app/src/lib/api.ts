@@ -93,10 +93,15 @@ export async function uploadWallpaper(file: Blob, label: string): Promise<Custom
       signal: AbortSignal.timeout(30_000),
     },
   );
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-  const value = (await res.json()) as { success: true; wallpaper: CustomWallpaper } | { success: false; error: string };
-  if (!value.success) throw new Error(value.error);
-  return value.wallpaper;
+  if (!res.ok) {
+    // Surface the daemon's reason (bad format, too large, disk write failed…)
+    // so the pane can show something actionable instead of a bare status code.
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Upload failed: ${res.status}`);
+  }
+  // The daemon returns the stored wallpaper record directly (201 + JSON body),
+  // not a { success, wallpaper } envelope.
+  return (await res.json()) as CustomWallpaper;
 }
 
 export async function deleteWallpaper(id: string): Promise<void> {

@@ -196,25 +196,35 @@ async fn get_distro() -> Result<String, String> {
 #[derive(serde::Serialize)]
 struct PickedImage {
     name: String,
-    data: Vec<u8>,
+    // Base64 over the IPC boundary: a `Vec<u8>` field serializes as a JSON
+    // array of numbers, which `new Blob([..])` stringifies into garbage the
+    // daemon can't decode. Base64 keeps the bytes intact end to end.
+    data_base64: String,
 }
 
-// Native OS file picker for wallpaper uploads. OS-integration glue on purpose:
-// the WebView never browses the host filesystem itself, it only receives the
-// one file the user explicitly picked in a real Windows dialog.
+// Native OS file picker for wallpaper uploads (multi-select — Settings allows
+// batch adds). OS-integration glue on purpose: the WebView never browses the
+// host filesystem itself, it only receives the files the user explicitly
+// picked in a real Windows dialog.
 #[tauri::command]
-async fn pick_image() -> Result<Option<PickedImage>, String> {
-    let Some(file) = rfd::AsyncFileDialog::new()
-        .set_title("Choose an image")
+async fn pick_images() -> Result<Vec<PickedImage>, String> {
+    let files = rfd::AsyncFileDialog::new()
+        .set_title("Choose images")
         .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
-        .pick_file()
+        .pick_files()
         .await
-    else {
-        return Ok(None);
-    };
-    let name = file.file_name().to_string();
-    let data = file.read().await;
-    Ok(Some(PickedImage { name, data }))
+        .unwrap_or_default();
+
+    let mut picked = Vec::with_capacity(files.len());
+    for file in files {
+        let name = file.file_name().to_string();
+        let data = file.read().await;
+        picked.push(PickedImage {
+            name,
+            data_base64: base64::encode(data),
+        });
+    }
+    Ok(picked)
 }
 
 #[tauri::command]
@@ -261,7 +271,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro, pick_image])
+        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro, pick_images])
         .manage(DaemonChild(Mutex::new(None)))
         .setup(|app| {
             use std::time::{Duration, Instant};

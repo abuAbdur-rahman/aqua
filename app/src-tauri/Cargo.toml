@@ -24,4 +24,5 @@ serde_json = "1"
 thiserror = "1"
 encoding_rs = { version = "0.8", default-features = false }
 rfd = "0.15"
+base64 = "0.22"
 

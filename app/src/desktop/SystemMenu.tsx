@@ -195,8 +195,8 @@ export function SystemMenu({ daemonState, daemonVersion }: SystemMenuProps) {
           openPanel === "menu" ? "bg-bg-hover" : "hover:bg-bg-hover"
         }`}
       >
-        {/* Fixed Aqua glyph — never changes with focus */}
-        <span className="block h-2.5 w-2.5 rotate-45 rounded-[3px] bg-accent" aria-hidden="true" />
+        {/* Fixed Aqua mark — never changes with focus */}
+        <img src="/icons/aqua-logo.png" alt="" className="block h-3.5 w-3.5 rounded-[3px] object-contain" aria-hidden="true" />
       </button>
 
       <AnimatePresence>
