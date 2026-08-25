@@ -10,6 +10,7 @@ axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 futures-util = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 notify = "8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tantivy = "0.25"

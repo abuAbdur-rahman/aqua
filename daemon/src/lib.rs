@@ -4,6 +4,7 @@ mod search;
 mod state;
 mod sysmon;
 mod system;
+mod wallpaper;
 mod watch;
 
 use std::{
@@ -20,7 +21,7 @@ use axum::{
         ws::{Message, WebSocket},
     },
     response::Response,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use rustix::fs::{OFlags, ResolveFlags, openat2};
 use serde::Serialize;
@@ -38,6 +39,7 @@ pub(crate) struct AppState {
     pub(crate) search: search::Manager,
     pub(crate) state: state::Store,
     pub(crate) elevation: system::Elevation,
+    pub(crate) wallpaper_dir: Arc<Path>,
     pub(crate) shutdown: Arc<tokio::sync::Notify>,
 }
 
@@ -73,6 +75,7 @@ const MAX_ECHO_MESSAGE_BYTES: usize = 1024 * 1024;
 const MAX_WATCH_MESSAGE_BYTES: usize = 16 * 1024;
 const MAX_SYSMON_MESSAGE_BYTES: usize = 16 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
+const MAX_UPLOAD_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn daemon_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], DAEMON_PORT))
@@ -138,6 +141,7 @@ fn build_router(
         state::Store::in_memory().expect("in-memory state database must be available")
     };
     let shutdown_signal = Arc::new(tokio::sync::Notify::new());
+    let wallpaper_dir = Arc::from(root.join(".local/share/aqua/wallpapers"));
     let state = AppState {
         version: Arc::from(env!("CARGO_PKG_VERSION")),
         fs_root: Arc::from(root),
@@ -147,6 +151,7 @@ fn build_router(
         search: search.clone(),
         state: state_store,
         elevation,
+        wallpaper_dir,
         shutdown: Arc::clone(&shutdown_signal),
     };
     let router = Router::new()
@@ -157,6 +162,14 @@ fn build_router(
         .route("/api/fs/write", put(fs::write))
         .route("/api/search", get(search::query))
         .route("/api/state/layout", get(state_layout).put(state_layout_put))
+        .route("/api/wallpaper", get(wallpaper::state).put(wallpaper::set))
+        .route(
+            "/api/wallpaper/upload",
+            post(wallpaper::upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
+        .route("/api/wallpaper/{id}", delete(wallpaper::delete))
+        .route("/api/wallpaper/asset/{id}", get(wallpaper::asset))
+        .route("/api/wallpaper/asset/{id}/thumb", get(wallpaper::thumb))
         .route("/api/system/elevate", post(system::elevate))
         .route("/api/system/shutdown", post(system::shutdown))
         .route("/api/pty/spawn", post(pty::spawn))

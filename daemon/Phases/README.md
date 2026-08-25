@@ -12,6 +12,7 @@ These files expand the backend roadmap from `../../README.md` and `../PLAN.md` i
 | 5 – Persistence | [`5.md`](./5.md) | SQLite migrations and layout GET/PUT API |
 | 6 – Hardening | [`6.md`](./6.md) | Authentication/Origin enforcement, path audit, lifecycle and reliability review |
 | 7 – Elevation | [`7.md`](./7.md) | Sudo-validated elevation cache, `needsElevation` retries, single-shot privileged helper binary |
+| 8 – Wallpaper | [`8.md`](./8.md) | Custom wallpaper uploads, thumbnails, selection persistence, asset serving |
 
 ## Working order
 

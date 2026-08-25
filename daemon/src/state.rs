@@ -6,7 +6,7 @@ use std::{
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 const DEFAULT_DB_DIR: &str = ".local/share/aqua";
 const DEFAULT_DB_FILE: &str = "state.sqlite3";
 
@@ -43,6 +43,16 @@ pub(crate) struct SpaceState {
     pub(crate) id: i64,
     pub(crate) name: String,
     pub(crate) order_index: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WallpaperRecord {
+    pub(crate) id: String,
+    pub(crate) label: String,
+    pub(crate) path: PathBuf,
+    pub(crate) thumb_path: PathBuf,
+    pub(crate) added_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug)]
@@ -165,6 +175,143 @@ impl Store {
         }
         transaction.commit().map_err(storage)
     }
+
+    pub(crate) fn list_wallpapers(&self) -> Result<Vec<WallpaperRecord>, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let mut statement = connection
+            .prepare("SELECT id, label, path, thumb_path, added_at FROM wallpapers ORDER BY added_at, id")
+            .map_err(storage)?;
+        let wallpapers = statement
+            .query_map([], |row| {
+                let added_at: String = row.get(4)?;
+                Ok(WallpaperRecord {
+                    id: row.get(0)?,
+                    label: row.get(1)?,
+                    path: PathBuf::from(row.get::<_, String>(2)?),
+                    thumb_path: PathBuf::from(row.get::<_, String>(3)?),
+                    added_at: chrono::DateTime::parse_from_rfc3339(&added_at)
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?
+                        .into(),
+                })
+            })
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?;
+        Ok(wallpapers)
+    }
+
+    pub(crate) fn insert_wallpaper(&self, wallpaper: &WallpaperRecord) -> Result<(), StateError> {
+        if wallpaper.id.trim().is_empty() || wallpaper.label.trim().is_empty() {
+            return Err(StateError::Invalid(
+                "wallpapers must have non-empty IDs and labels".into(),
+            ));
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        connection
+            .execute(
+                "INSERT INTO wallpapers (id, label, path, thumb_path, added_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    wallpaper.id,
+                    wallpaper.label,
+                    wallpaper.path.to_string_lossy(),
+                    wallpaper.thumb_path.to_string_lossy(),
+                    wallpaper.added_at.to_rfc3339(),
+                ],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    pub(crate) fn get_wallpaper(&self, id: &str) -> Result<Option<WallpaperRecord>, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let mut statement = connection
+            .prepare("SELECT id, label, path, thumb_path, added_at FROM wallpapers WHERE id = ?1")
+            .map_err(storage)?;
+        let mut rows = statement
+            .query_map(params![id], |row| {
+                let added_at: String = row.get(4)?;
+                Ok(WallpaperRecord {
+                    id: row.get(0)?,
+                    label: row.get(1)?,
+                    path: PathBuf::from(row.get::<_, String>(2)?),
+                    thumb_path: PathBuf::from(row.get::<_, String>(3)?),
+                    added_at: chrono::DateTime::parse_from_rfc3339(&added_at)
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?
+                        .into(),
+                })
+            })
+            .map_err(storage)?;
+        match rows.next() {
+            Some(record) => Ok(Some(record.map_err(storage)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn delete_wallpaper(&self, id: &str) -> Result<bool, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let deleted = connection
+            .execute("DELETE FROM wallpapers WHERE id = ?1", params![id])
+            .map_err(storage)?;
+        Ok(deleted > 0)
+    }
+
+    pub(crate) fn get_pref(&self, key: &str) -> Result<Option<String>, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let mut statement = connection
+            .prepare("SELECT value FROM prefs WHERE key = ?1")
+            .map_err(storage)?;
+        let mut rows = statement.query(params![key]).map_err(storage)?;
+        match rows.next().map_err(storage)? {
+            Some(row) => Ok(Some(row.get::<_, String>(0).map_err(storage)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn set_pref(&self, key: &str, value: &str) -> Result<(), StateError> {
+        if key.trim().is_empty() {
+            return Err(StateError::Invalid(
+                "preference key must not be empty".into(),
+            ));
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        connection
+            .execute(
+                "INSERT INTO prefs (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
 }
 
 fn migrate(connection: &Connection) -> Result<(), StateError> {
@@ -182,6 +329,15 @@ fn migrate(connection: &Connection) -> Result<(), StateError> {
              CREATE TABLE IF NOT EXISTS spaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL, order_index INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS windows (id TEXT PRIMARY KEY, app TEXT NOT NULL, space_id INTEGER NOT NULL REFERENCES spaces(id), x INTEGER NOT NULL, y INTEGER NOT NULL, w INTEGER NOT NULL, h INTEGER NOT NULL, minimized INTEGER NOT NULL, z_index INTEGER NOT NULL, app_state TEXT NOT NULL);
              PRAGMA user_version = 1;
+             COMMIT;",
+        ).map_err(storage)?;
+    }
+    if version < 2 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS wallpapers (id TEXT PRIMARY KEY, label TEXT NOT NULL, path TEXT NOT NULL, thumb_path TEXT NOT NULL, added_at TEXT NOT NULL);
+             PRAGMA user_version = 2;
              COMMIT;",
         ).map_err(storage)?;
     }
@@ -314,5 +470,83 @@ mod tests {
         let path = directory.path().join("state.sqlite3");
         Store::open(path.clone()).unwrap();
         Store::open(path).unwrap();
+    }
+
+    #[test]
+    fn schema_v1_database_gains_prefs_and_wallpapers() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.sqlite3");
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection.execute_batch(
+                "CREATE TABLE IF NOT EXISTS spaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL, order_index INTEGER NOT NULL);
+                 CREATE TABLE IF NOT EXISTS windows (id TEXT PRIMARY KEY, app TEXT NOT NULL, space_id INTEGER NOT NULL REFERENCES spaces(id), x INTEGER NOT NULL, y INTEGER NOT NULL, w INTEGER NOT NULL, h INTEGER NOT NULL, minimized INTEGER NOT NULL, z_index INTEGER NOT NULL, app_state TEXT NOT NULL);
+                 PRAGMA user_version = 1;",
+            ).unwrap();
+        }
+        let store = Store::open(path).unwrap();
+        assert_eq!(store.list_wallpapers().unwrap(), Vec::new());
+        store.set_pref("wallpaper.current", "custom-1").unwrap();
+        assert_eq!(
+            store.get_pref("wallpaper.current").unwrap(),
+            Some("custom-1".into())
+        );
+    }
+
+    #[test]
+    fn preference_round_trips_and_overwrites() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path().join("state.sqlite3")).unwrap();
+        assert_eq!(store.get_pref("wallpaper.current").unwrap(), None);
+        store.set_pref("wallpaper.current", "aqua").unwrap();
+        store.set_pref("wallpaper.current", "custom-9").unwrap();
+        assert_eq!(
+            store.get_pref("wallpaper.current").unwrap(),
+            Some("custom-9".into())
+        );
+        assert!(matches!(
+            store.set_pref(" ", "x"),
+            Err(StateError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn wallpaper_records_round_trip() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path().join("state.sqlite3")).unwrap();
+        let record = WallpaperRecord {
+            id: "abc".into(),
+            label: "Label".into(),
+            path: directory.path().join("abc.png"),
+            thumb_path: directory.path().join("abc.thumb.png"),
+            added_at: chrono::Utc::now(),
+        };
+        store.insert_wallpaper(&record).unwrap();
+        assert_eq!(store.list_wallpapers().unwrap(), vec![record.clone()]);
+        assert_eq!(store.get_wallpaper("abc").unwrap(), Some(record));
+        assert_eq!(store.get_wallpaper("missing").unwrap(), None);
+        assert!(store.delete_wallpaper("abc").unwrap());
+        assert!(!store.delete_wallpaper("abc").unwrap());
+    }
+
+    #[test]
+    fn invalid_wallpaper_rows_are_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path().join("state.sqlite3")).unwrap();
+        let base = |id: &str, label: &str| WallpaperRecord {
+            id: id.into(),
+            label: label.into(),
+            path: PathBuf::from("p"),
+            thumb_path: PathBuf::from("t"),
+            added_at: chrono::Utc::now(),
+        };
+        assert!(matches!(
+            store.insert_wallpaper(&base(" ", "label")),
+            Err(StateError::Invalid(_))
+        ));
+        assert!(matches!(
+            store.insert_wallpaper(&base("id", " ")),
+            Err(StateError::Invalid(_))
+        ));
     }
 }
