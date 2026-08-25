@@ -127,8 +127,8 @@ export function SystemMenu({ daemonState, daemonVersion }: SystemMenuProps) {
 
   const items: MenuItem[] = [
     { id: "about", label: "About Aqua", onSelect: () => setOpenPanel("about") },
-    // Settings app arrives in Phase 10; the slot exists so the menu shape is final.
-    { id: "settings", label: "Settings…", enabled: false },
+    // Settings app (Phase 10)
+    { id: "settings", label: "Settings…", onSelect: () => void useWindowStore.getState().openApp("settings") },
     { id: "restart-daemon", separatorAfter: true, label: daemonState === "connected" ? "Restart Daemon" : "Start Daemon", onSelect: () => {
       setOpenPanel(null);
       if (daemonState === "connected") {

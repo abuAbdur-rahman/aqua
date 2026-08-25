@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useMemo, lazy, Suspense } from "react";
 import { motion } from "framer-motion";
 import { appManifest } from "./manifest";
 import { useWindowStore, type WindowRecord } from "./store";
+import { usePrefsStore } from "../lib/prefs";
 import { FinderPane } from "../panes/FinderPane";
 import { ActivityPane } from "../panes/ActivityPane";
 import { EditorPane } from "../panes/EditorPane";
@@ -9,6 +10,11 @@ import { EditorPane } from "../panes/EditorPane";
 // xterm.js is heavy; load the Terminal pane only when a terminal window opens.
 const TerminalPane = lazy(() =>
   import("../panes/TerminalPane").then((m) => ({ default: m.TerminalPane })),
+);
+
+// Settings is opened rarely; keep it out of the initial bundle like Terminal.
+const SettingsPane = lazy(() =>
+  import("../panes/SettingsPane").then((m) => ({ default: m.SettingsPane })),
 );
 
 type Props = {
@@ -20,8 +26,9 @@ const SNAP = 12;
 const TITLE_H = 28;
 
 function useReducedMotion() {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const prefReduced = usePrefsStore((s) => s.reduceMotion);
+  if (typeof window === "undefined") return prefReduced;
+  return prefReduced || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function dockOrigin(appId: string): { x: number; y: number } | null {
@@ -249,7 +256,18 @@ export function WindowFrame({ win, containerRef }: Props) {
         )}
         {win.appId === "activity" && <ActivityPane />}
         {win.appId === "editor" && <EditorPane />}
-        {!["finder", "terminal", "activity", "editor"].includes(win.appId) && (
+        {win.appId === "settings" && (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-text-tertiary" role="status">
+                Loading Settings…
+              </div>
+            }
+          >
+            <SettingsPane />
+          </Suspense>
+        )}
+        {!["finder", "terminal", "activity", "editor", "settings"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />
         )}
       </div>

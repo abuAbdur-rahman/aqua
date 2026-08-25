@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform, AnimatePresence, type MotionValue } from "framer-motion";
 import { appManifest } from "../windows/manifest";
 import { useWindowStore } from "../windows/store";
+import { DOCK_MAGNIFY_DELTA, systemReducedMotion, usePrefsStore } from "../lib/prefs";
 
 // macOS Dock principles: width/height expansion (not scale), ripple via proximity, sub-pixel weighting, bottom anchor
-const BASE_SIZE = 40;
-const MAGNIFIED_SIZE = 64; // DESIGN.md 48→64, using 40→64 to keep recent tighter sizing but respect cap
 const PROXIMITY_RADIUS = 150;
 
 interface DockItem {
@@ -19,6 +18,7 @@ const DOCK_ORDER: DockItem[] = [
   { id: "terminal", label: "Terminal", icon: appManifest.terminal.icon },
   { id: "editor", label: "Editor", icon: appManifest.editor.icon },
   { id: "activity", label: "Activity", icon: appManifest.activity.icon },
+  { id: "settings", label: "Settings", icon: appManifest.settings.icon },
 ];
 
 function DockIcon({
@@ -40,12 +40,20 @@ function DockIcon({
 }) {
   const ref = useRef<HTMLButtonElement>(null);
 
+  const baseSize = usePrefsStore((s) => s.dockSize);
+  const magnifiedSize = baseSize + DOCK_MAGNIFY_DELTA;
+  const reducedLaunch = systemReducedMotion();
+
   const distance = useTransform(mouseX, (val: number) => {
     const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
     return val - bounds.x - bounds.width / 2;
   });
 
-  const rawSize = useTransform(distance, [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS], [BASE_SIZE, MAGNIFIED_SIZE, BASE_SIZE]);
+  const rawSize = useTransform(
+    distance,
+    [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS],
+    systemReducedMotion() ? [baseSize, baseSize, baseSize] : [baseSize, magnifiedSize, baseSize],
+  );
 
   // Apple-like spring: light mass, snappy, damped — GPU not hit: only width/height layout in dock island (<7 items)
   const size = useSpring(rawSize, { mass: 0.1, stiffness: 150, damping: 12 });
@@ -65,8 +73,8 @@ function DockIcon({
         const ev = new CustomEvent("aqua-dock-context", { detail: { appId: item.id, x: e.clientX, y: e.clientY } });
         window.dispatchEvent(ev);
       }}
-      animate={launching ? { y: [0, -10, 0] } : {}}
-      transition={launching ? { duration: 0.5, ease: [0.4, 0, 0.2, 1] } : {}}
+      animate={launching && !reducedLaunch ? { y: [0, -10, 0] } : {}}
+      transition={launching && !reducedLaunch ? { duration: 0.5, ease: [0.4, 0, 0.2, 1] } : {}}
       style={{ width: size, height: size } as unknown as React.CSSProperties}
       className="group relative flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-secondary ring-1 ring-white/5 transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
     >
@@ -135,12 +143,18 @@ export function Dock() {
   const minCountFor = (appId: string) => windows.filter((w) => w.appId === appId && w.minimized).length;
 
   // Trash also participates in magnification — same physics, separate motion value via shared mouseX
+  const baseSize = usePrefsStore((s) => s.dockSize);
   const trashRef = useRef<HTMLButtonElement>(null);
   const trashDist = useTransform(mouseX, (val: number) => {
     const b = trashRef.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
     return val - b.x - b.width / 2;
   });
-  const trashRaw = useTransform(trashDist, [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS], [BASE_SIZE, MAGNIFIED_SIZE, BASE_SIZE]);
+  const reduced = systemReducedMotion();
+  const trashRaw = useTransform(
+    trashDist,
+    [-PROXIMITY_RADIUS, 0, PROXIMITY_RADIUS],
+    reduced ? [baseSize, baseSize, baseSize] : [baseSize, baseSize + DOCK_MAGNIFY_DELTA, baseSize],
+  );
   const trashSize = useSpring(trashRaw, { mass: 0.1, stiffness: 150, damping: 12 });
 
   return (

@@ -59,3 +59,46 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} failed: ${res.status}`);
   return res.json();
 }
+
+export interface CustomWallpaper {
+  id: string;
+  label: string;
+  addedAt: string;
+}
+
+export interface WallpaperState {
+  current: string;
+  custom: CustomWallpaper[];
+}
+
+export function wallpaperAssetUrl(id: string, variant: "full" | "thumb"): string {
+  return `${DAEMON_BASE}/api/wallpaper/asset/${encodeURIComponent(id)}${variant === "thumb" ? "/thumb" : ""}`;
+}
+
+export async function getWallpaper(): Promise<WallpaperState> {
+  return fetchJson<WallpaperState>("/api/wallpaper");
+}
+
+export async function setWallpaper(id: string): Promise<void> {
+  await fetchJson("/api/wallpaper", { method: "PUT", body: JSON.stringify({ id }) });
+}
+
+export async function uploadWallpaper(file: Blob, label: string): Promise<CustomWallpaper> {
+  const res = await fetch(
+    `${DAEMON_BASE}/api/wallpaper/upload?label=${encodeURIComponent(label)}`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: file,
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  const value = (await res.json()) as { success: true; wallpaper: CustomWallpaper } | { success: false; error: string };
+  if (!value.success) throw new Error(value.error);
+  return value.wallpaper;
+}
+
+export async function deleteWallpaper(id: string): Promise<void> {
+  await fetchJson(`/api/wallpaper/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

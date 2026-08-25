@@ -193,6 +193,30 @@ async fn get_distro() -> Result<String, String> {
     discover_default_distro().await.map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+struct PickedImage {
+    name: String,
+    data: Vec<u8>,
+}
+
+// Native OS file picker for wallpaper uploads. OS-integration glue on purpose:
+// the WebView never browses the host filesystem itself, it only receives the
+// one file the user explicitly picked in a real Windows dialog.
+#[tauri::command]
+async fn pick_image() -> Result<Option<PickedImage>, String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("Choose an image")
+        .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let name = file.file_name().to_string();
+    let data = file.read().await;
+    Ok(Some(PickedImage { name, data }))
+}
+
 #[tauri::command]
 async fn greet(name: String) -> Result<String, String> {
     Ok(format!("Hello, {}! You've been greeted from Rust!", name))
@@ -237,7 +261,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro])
+        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro, pick_image])
         .manage(DaemonChild(Mutex::new(None)))
         .setup(|app| {
             use std::time::{Duration, Instant};
