@@ -79,10 +79,25 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
     terminal.open(host);
     terminalRef.current = terminal;
     terminalsRef.current.set(tab.id, terminal);
+
+    // Output is discarded until the shell confirms the silent `aqua` setup
+    // finished (OSC 777 "ready") — otherwise the echoed setup commands flash
+    // on every open. The timeout guards against shells that never answer.
+    let buffering = true;
+    const stopBuffering = () => {
+      buffering = false;
+    };
+    const readyTimer = window.setTimeout(stopBuffering, 3000);
+
     const input = terminal.onData((data) => sessionRef.current?.sendInput(new TextEncoder().encode(data)));
     const binaryInput = terminal.onBinary((data) => sessionRef.current?.sendInput(Uint8Array.from(data, (char) => char.charCodeAt(0))));
     const osc = terminal.parser.registerOscHandler(777, (data) => {
       const [command, encodedPath] = data.split(";", 2);
+      if (command === "ready") {
+        window.clearTimeout(readyTimer);
+        stopBuffering();
+        return true;
+      }
       const path = encodedPath ? decodeURIComponent(encodedPath) : "";
       if ((command === "edit" || command === "finder") && path) {
         window.dispatchEvent(new CustomEvent(command === "edit" ? "aqua:open-editor" : "aqua:open-finder", { detail: path }));
@@ -109,7 +124,10 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
       cols: terminal.cols || 80,
       rows: terminal.rows || 24,
       ...(cwd ? { cwd } : {}),
-      onOutput: (data) => terminal.write(data),
+      onOutput: (data) => {
+        if (buffering) return;
+        terminal.write(data);
+      },
       onExit: ({ code }) => {
         terminal.writeln(`\r\n[Process exited with code ${code}]`);
         onStateChangeRef.current("exited", code);
@@ -122,8 +140,10 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
       }
       sessionRef.current = session;
       onStateChangeRef.current("connected");
+      // stty -echo first so the function definition never echoes; the ready
+      // marker lifts the output buffer, then clear gives a clean prompt.
       session.sendInput(new TextEncoder().encode("stty -echo\n"));
-      session.sendInput(new TextEncoder().encode("function aqua(){ case \"$1\" in edit|finder) local p=\"$2\"; [[ \"$p\" != /* ]] && p=\"$PWD/${p#./}\"; printf '\\033]777;%s;%s\\007' \"$1\" \"$p\" ;; *) echo 'Usage: aqua edit <path> | aqua finder <path>' ;; esac; }; export -f aqua; clear; stty echo\n"));
+      session.sendInput(new TextEncoder().encode("function aqua(){ case \"$1\" in edit|finder) local p=\"$2\"; [[ \"$p\" != /* ]] && p=\"$PWD/${p#./}\"; printf '\\033]777;%s;%s\\007' \"$1\" \"$p\" ;; *) echo 'Usage: aqua edit <path> | aqua finder <path>' ;; esac; }; export -f aqua; clear; stty echo; printf '\\033]777;ready\\007'\n"));
       resize();
     }).catch(() => {
       if (!cancelled) onStateChangeRef.current("disconnected");
@@ -131,6 +151,7 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
 
     return () => {
       cancelled = true;
+      window.clearTimeout(readyTimer);
       observer.disconnect();
       schedulerRef.current?.dispose();
       schedulerRef.current = null;
@@ -156,7 +177,25 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
     const terminal = terminalRef.current;
     if (!terminal) return;
     terminal.options.fontSize = fontSize;
-    fitRef.current?.fit();
+    // The renderer re-measures glyph metrics asynchronously after a font-size
+    // change — fitting synchronously uses stale metrics and corrupts the grid
+    // (TUI apps like tmux render zoomed/broken). Re-fit once the renderer has
+    // settled, then push the new cols/rows to the pty without the debounce so
+    // full-screen apps repaint at the correct size immediately.
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const fit = fitRef.current;
+        if (!fit) return;
+        fit.fit();
+        terminal.refresh(0, terminal.rows - 1);
+        sessionRef.current?.resize(terminal.cols, terminal.rows);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [fontSize]);
 
   return (

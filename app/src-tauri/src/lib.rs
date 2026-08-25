@@ -82,12 +82,25 @@ async fn resolve_daemon_dir(distro: &str) -> Result<String, DaemonError> {
 
 async fn spawn_daemon(distro: &str, dir: &str) -> Result<std::process::Child, DaemonError> {
     Command::new("wsl.exe")
-        .args(["-d", distro, "--", "cargo", "run", "--release", "--manifest-path", &format!("{dir}/Cargo.toml")])
+        .args([
+            "-d",
+            distro,
+            "--",
+            "cargo",
+            "run",
+            "--release",
+            "--manifest-path",
+            &format!("{dir}/Cargo.toml"),
+        ])
         .spawn()
         .map_err(|e| DaemonError::SpawnFailed(e.to_string()))
 }
 
-async fn wait_for_health(_app: AppHandle, max_retries: u32, interval_ms: u64) -> Result<(), DaemonError> {
+async fn wait_for_health(
+    _app: AppHandle,
+    max_retries: u32,
+    interval_ms: u64,
+) -> Result<(), DaemonError> {
     let client = reqwest::Client::new();
     for _ in 0..max_retries {
         match client.get(DAEMON_HEALTH_URL).send().await {
@@ -162,21 +175,25 @@ async fn start_daemon(app: &AppHandle) -> Result<(), DaemonError> {
 async fn restart_daemon(app: AppHandle) -> Result<(), String> {
     stop_daemon(&app.state::<DaemonChild>()).await?;
     let distro = discover_default_distro().await.map_err(|e| e.to_string())?;
-    let dir = resolve_daemon_dir(&distro).await.map_err(|e| e.to_string())?;
+    let dir = resolve_daemon_dir(&distro)
+        .await
+        .map_err(|e| e.to_string())?;
     // cargo may recompile after a daemon-side change, so allow a longer
     // health window than first launch.
-    let child = spawn_daemon(&distro, &dir).await.map_err(|e| e.to_string())?;
+    let child = spawn_daemon(&distro, &dir)
+        .await
+        .map_err(|e| e.to_string())?;
     store_child(&app, child);
-    wait_for_health(app.clone(), 100, 200).await.map_err(|e| e.to_string())
+    wait_for_health(app.clone(), 100, 200)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn relaunch_aqua(app: AppHandle) -> Result<(), String> {
     stop_daemon(&app.state::<DaemonChild>()).await?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    Command::new(exe)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    Command::new(exe).spawn().map_err(|e| e.to_string())?;
     app.exit(0);
     Ok(())
 }
@@ -191,6 +208,39 @@ async fn quit_and_stop_daemon(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn get_distro() -> Result<String, String> {
     discover_default_distro().await.map_err(|e| e.to_string())
+}
+
+// Distro-scoped WSL power action (app/PLAN.md §4 "Power actions"): terminate
+// the one distro Aqua depends on, then re-run the normal startup sequence.
+// `wsl --shutdown` (whole VM) is deliberately never exposed — see the hard
+// rule in app/AGENTS.md. Reachable only from Settings → Daemon pane, always
+// behind a confirmation modal naming this resolved distro.
+#[tauri::command]
+async fn restart_wsl_distro(app: AppHandle) -> Result<(), String> {
+    stop_daemon(&app.state::<DaemonChild>()).await?;
+    let distro = discover_default_distro().await.map_err(|e| e.to_string())?;
+    let output = Command::new("wsl.exe")
+        .args(["--terminate", &distro])
+        .output()
+        .map_err(|e| format!("WSL not available: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "wsl --terminate {} failed: {}",
+            distro,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let dir = resolve_daemon_dir(&distro)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Fresh distro boot means cargo may recompile; use the long health window.
+    let child = spawn_daemon(&distro, &dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    store_child(&app, child);
+    wait_for_health(app.clone(), 100, 200)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -271,7 +321,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![greet, restart_daemon, relaunch_aqua, quit_and_stop_daemon, get_distro, pick_images])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            restart_daemon,
+            relaunch_aqua,
+            quit_and_stop_daemon,
+            get_distro,
+            pick_images,
+            restart_wsl_distro
+        ])
         .manage(DaemonChild(Mutex::new(None)))
         .setup(|app| {
             use std::time::{Duration, Instant};
@@ -282,19 +340,22 @@ pub fn run() {
             // A stale registration (e.g. a lingering previous dev instance still
             // holding Ctrl+Shift+Space) must not take the whole app down —
             // degrade to "no global shortcut" instead of panicking in setup.
-            if let Err(e) = app.global_shortcut().on_shortcut("Ctrl+Shift+Space", move |app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    let mut last = last_toggle.lock().unwrap();
-                    if last.elapsed() < Duration::from_millis(300) {
-                        return;
+            if let Err(e) = app.global_shortcut().on_shortcut(
+                "Ctrl+Shift+Space",
+                move |app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let mut last = last_toggle.lock().unwrap();
+                        if last.elapsed() < Duration::from_millis(300) {
+                            return;
+                        }
+                        *last = Instant::now();
+                        drop(last);
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit("spotlight-toggle", ());
+                        }
                     }
-                    *last = Instant::now();
-                    drop(last);
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.emit("spotlight-toggle", ());
-                    }
-                }
-            }) {
+                },
+            ) {
                 eprintln!("Global shortcut unavailable: {}", e);
             }
             let app_handle = app.handle().clone();

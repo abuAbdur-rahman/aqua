@@ -20,6 +20,8 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 | Editor UI | Monaco-based, multi-tab, save-to-disk |
 | Activity Monitor UI | Read-only live charts (CPU/mem/disk/process list) |
 | Spotlight | Files + content search, app launcher, quick actions, **system-wide global hotkey** |
+| Gallery UI | Grid browse of images in a folder + full-screen Loupe view. No new daemon endpoints — consumes `fs/list`, `fs/read`, `fs/op`, `/ws/fs-watch` only. Full spec: `design/UI-SPEC-12-Gallery.md`. |
+| Command Center | Searchable palette over every app-menu, window, Space, and system command. `Ctrl+Shift+/`, local hotkey (no Tauri global-shortcut involvement — see `design/UI-SPEC-14-CommandCenter.md` §2). |
 | Menu bar | Functional, context-sensitive per focused app |
 | Access model | Localhost only, no auth — WebView never loads anything but Aqua |
 
@@ -60,6 +62,19 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – tha
 3. If not, spawn `wsl.exe -d Ubuntu -- ./daemon`, poll health every ~200ms (timeout ~5s), then show the window.
 4. On app quit, **leave the daemon running** — killing it drops active pty sessions and in-memory index state. A "Quit and stop backend" tray item can be added later for an explicit full shutdown.
 
+### Power actions
+
+Four named Tauri commands total, three already specified, one new here:
+
+| Command | Scope | Reachable from |
+|---|---|---|
+| `quit_and_stop_daemon` | Graceful daemon stop (existing) | System Menu |
+| `restart_daemon` | Daemon process restart, distro left running (existing) | System Menu |
+| `relaunch_aqua` | App + daemon restart (existing) | System Menu |
+| `restart_wsl_distro` | **New.** `wsl --terminate <name>` + respawn — kills the specific WSL distro Aqua depends on, then re-runs the existing startup sequence above | Settings → Daemon pane only, never System Menu |
+
+`restart_wsl_distro` is the ceiling of what Aqua will ever do to WSL. `wsl --shutdown` (the whole VM, every distro) is explicitly not implemented — see the hard rule in `app/AGENTS.md`.
+
 ### Window config (`tauri.conf.json`)
 
 - `identifier: "com.abdul.aqua"` (or your preferred reverse-domain), `productName: "Aqua"`
@@ -77,6 +92,8 @@ app/frontend/src/
     Dock.tsx
     MenuBar.tsx             # renders per-focused-app menu config
     Spotlight.tsx
+    CommandCenter.tsx           # palette shell — shares PaletteOverlay with Spotlight
+    commandRegistry.ts          # aggregates AppMenuGroup + windowStore + SpacesAction into CommandEntry[]
     Spaces.tsx               # Mission Control view + space switching
   window-manager/
     WindowFrame.tsx         # chrome: traffic lights, title bar, resize handles
@@ -96,6 +113,11 @@ app/frontend/src/
       Editor.tsx               # Monaco wrapper
     spotlight/
       SpotlightPalette.tsx
+    gallery/
+      Gallery.tsx               # grid view, toolbar, selection
+      GalleryGrid.tsx           # virtualized grid, IntersectionObserver lazy-load
+      Loupe.tsx                 # full-screen single-image view
+      useThumbnailCache.ts      # capped blob-URL cache, concurrency-limited fs/read queue
   lib/
     ws.ts                      # typed WS channel multiplexer, points at localhost:61234
     api.ts                     # typed REST client, points at localhost:61234
@@ -153,9 +175,11 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 | 3 — Terminal UI | xterm.js wired to `/ws/pty/:id`, multi-tab within one window |
 | 4 — Activity Monitor UI | Live CPU/mem/disk charts, process list, wired to `/ws/sysmon` |
 | 5 — Editor UI | Monaco integration, open-from-Finder, save-to-disk, multi-tab |
+| 5.5 — Gallery UI | Grid + Loupe, wired to existing `fs/list`/`fs/read`/`fs/op`/`fs-watch` — no backend dependency beyond what Backend Phase 1 (Finder backend) already ships. Spec: `design/UI-SPEC-12-Gallery.md` |
 | 6 — Spotlight | Global hotkey palette wired to `/api/search`, file search + app launch + quick actions |
-| 7 — Spaces | Multiple desktops, keyboard/gesture switching, Mission Control overview |
+| 7 — Spaces | Multiple desktops, keyboard/gesture switching, Mission Control overview. Spec: `design/UI-SPEC-13-Spaces.md`. New `DESIGN.md` motion tokens proposed there (§7) — not yet applied, needs its own append before this phase starts. |
 | 8 — Polish | Layout persistence wired end-to-end, per-app menu bar contents, dock magnification, window animations, tray menu |
+| 8.5 — Command Center | `Ctrl+Shift+/` palette wired to `AppMenuGroup`/`windowStore`/`SpacesAction`. Placed after Polish since it depends on per-app menu bar contents (Phase 8) actually being wired for its primary command source to be meaningful — can start earlier with a partial registry if useful for dogfooding. Spec: `design/UI-SPEC-14-CommandCenter.md` |
 
 ## 8. Risks (app-side)
 
@@ -166,6 +190,7 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 | Daemon not ready yet when window shows | Splash/loading state driven by the health-check poll in the startup sequence |
 | Monaco bundle size | Lazy-load Monaco only when Editor first opens |
 | Window drag performance with many windows | Transform-based dragging, RAF-batched updates |
+| `restart_wsl_distro` kills unrelated processes in that WSL instance (other terminals, Docker Desktop's WSL backend, etc.) | Confirmation modal names the real distro and states the blast radius explicitly; `wsl --shutdown` (whole-VM) is never exposed at all |
 
 ## 9. Immediate next step
 

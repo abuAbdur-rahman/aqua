@@ -50,6 +50,7 @@ Read-only status plus one action:
 - Daemon version (`HealthResponse.version`)
 - WSL distro name (whatever the Tauri host resolved at startup, per `app/AGENTS.md`'s "query `wsl -l -v`, never hardcode" rule)
 - **Restart Daemon** button — same action as the System Menu's entry, same Confirmation Modal copy; having it in two places (menu + Settings) is fine since they're the same underlying action, not a duplicated concept.
+- **Restart WSL Distro** button — the one distro-scoped power action (`restart_wsl_distro` Tauri command; see `app/PLAN.md` §4 "Power actions"). Routes through the Confirmation Modal with copy naming the actual distro resolved from `wsl -l -v`: title "Restart [distroName]?", body stating plainly that this restarts the entire WSL environment — any other terminal, process, or tool running inside it stops too — and that Aqua reconnects automatically once it's back up. Confirm label: "Restart [distroName]". Disabled with a tooltip ("Daemon must be running to restart it") if `GET /api/health` is currently failing — no point offering to restart something already unreachable. Never appears in the System Menu (see `app/AGENTS.md` hard rule).
 
 ## About pane
 

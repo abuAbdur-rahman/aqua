@@ -53,12 +53,15 @@ interface WindowState {
   editorPathRequest: string | null;
   finderPathRequest: string | null;
   terminalPathRequest: string | null;
+  galleryPathRequest: string | null;
   openEditor: (path: string) => void;
   openFinder: (path: string) => void;
   openTerminal: (path: string) => void;
+  openGallery: (path: string) => void;
   clearEditorPathRequest: () => void;
   clearFinderPathRequest: () => void;
   clearTerminalPathRequest: () => void;
+  clearGalleryPathRequest: () => void;
 }
 
 let idSeq = 1;
@@ -75,6 +78,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   editorPathRequest: null,
   finderPathRequest: null,
   terminalPathRequest: null,
+  galleryPathRequest: null,
 
   openApp: (appId) => {
     const manifest = appManifest[appId];
@@ -140,9 +144,16 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     get().openApp("terminal");
   },
 
+  // Gallery opens scoped to the parent of an image, or a folder as-is.
+  openGallery: (path) => {
+    set({ galleryPathRequest: path });
+    get().openApp("gallery");
+  },
+
   clearEditorPathRequest: () => set({ editorPathRequest: null }),
   clearFinderPathRequest: () => set({ finderPathRequest: null }),
   clearTerminalPathRequest: () => set({ terminalPathRequest: null }),
+  clearGalleryPathRequest: () => set({ galleryPathRequest: null }),
 
   close: (id) =>
     set((s) => {

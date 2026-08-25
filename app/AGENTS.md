@@ -27,6 +27,13 @@ Read the root `../AGENTS.md`, `../README.md`, `PLAN.md`, `../CONTRACT.md`, `../D
 
 Run the frontend and Tauri checks defined by the actual package manifests after they exist. Verify daemon health and WebSocket connectivity from Windows separately; do not infer Windows-to-WSL reachability from WSL-local tests.
 
+## Aqua-specific rules (append-only)
+
+- Never wire `wsl --shutdown` to anything in the UI. It kills the entire WSL2 VM — every distro on the machine, not just Aqua's — and is out of scope the same way other real hardware/OS-level actions are (see `aqua-backend-plan.md` §1). If a task seems to want "restart everything WSL," that's this rule flagging it, not a gap to fill in.
+- `restart_wsl_distro` (the one distro-scoped power action Aqua does own) always resolves the distro name via `wsl -l -v` first, same as the existing spawn path — never hardcode `-d Ubuntu`.
+- `restart_wsl_distro` is only reachable from Settings → Daemon pane, never the System Menu. It's a heavier action than the other three power commands (it affects every process in that WSL instance, not just Aqua's daemon) and shouldn't be one accidental click away from where people quit apps.
+- `restart_wsl_distro` always routes through the existing Confirmation/Elevation modal before firing. Copy must name the actual distro (from `wsl -l -v`, not a hardcoded string) and state plainly that this affects everything running in it, not just Aqua.
+
 ## Local implementation notes (app agent)
 
 - Package manager is **pnpm** (`packageManager: pnpm@11.6.0`). Run all frontend commands with `pnpm -C app ...`. Lockfile is `app/pnpm-lock.yaml`; `app/pnpm-workspace.yaml` allowlists `esbuild` for `onlyBuiltDependencies`.

@@ -1,5 +1,6 @@
 import { ConfirmModal } from "./ConfirmModal";
 import { ElevateModal } from "./ElevateModal";
+import { FilePickerModal } from "./FilePickerModal";
 import { PromptModal } from "./PromptModal";
 
 // Mounted once at the desktop root; every app and the System Menu route
@@ -10,6 +11,7 @@ export function ModalHost() {
       <ConfirmModal />
       <ElevateModal />
       <PromptModal />
+      <FilePickerModal />
     </>
   );
 }

@@ -23,6 +23,19 @@ export interface PromptRequest {
   onSubmit: (value: string) => void;
 }
 
+export type FilePickerMode = "open" | "selectFolder" | "save";
+
+export interface FilePickerRequest {
+  mode: FilePickerMode;
+  title: string;
+  submitLabel?: string;
+  /** Pre-filled file name in "save" mode. */
+  defaultName?: string;
+  /** Directory the dialog starts in (defaults to home). */
+  initialDir?: string;
+  onSubmit: (path: string) => void;
+}
+
 interface ModalState {
   confirm: (ConfirmRequest & { open: true }) | null;
   requestConfirm: (request: ConfirmRequest) => void;
@@ -33,6 +46,9 @@ interface ModalState {
   prompt: (PromptRequest & { open: true }) | null;
   requestPrompt: (request: PromptRequest) => void;
   closePrompt: () => void;
+  filePicker: (FilePickerRequest & { open: true }) | null;
+  requestFilePicker: (request: FilePickerRequest) => void;
+  closeFilePicker: () => void;
 }
 
 export const useModalStore = create<ModalState>((set) => ({
@@ -45,4 +61,7 @@ export const useModalStore = create<ModalState>((set) => ({
   prompt: null,
   requestPrompt: (request) => set({ prompt: { ...request, open: true } }),
   closePrompt: () => set({ prompt: null }),
+  filePicker: null,
+  requestFilePicker: (request) => set({ filePicker: { ...request, open: true } }),
+  closeFilePicker: () => set({ filePicker: null }),
 }));

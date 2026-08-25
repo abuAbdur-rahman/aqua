@@ -40,6 +40,8 @@ The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 
 | Editor | Monaco-based, multi-tab |
 | Activity Monitor | Read-only live stats |
 | Spotlight | Files + app launch + quick actions + global hotkey |
+| Gallery | Grid + full-screen image browsing, folder-scoped. No new daemon surface. |
+| Command Center | `Ctrl+Shift+/` action palette — window, Space, app-menu, and system commands. No new daemon surface. |
 | Menu bar | Functional, context-sensitive per app |
 | Theme | Dark mode only — see `DESIGN.md` |
 
@@ -88,26 +90,29 @@ Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a change. The two wor
 
 ## Current status
 
-Backend Phases 0–4 are complete and verified (foundation, Finder, Terminal, Activity Monitor, Spotlight search backend).
+Backend Phases 0–6 are complete and verified (foundation, Finder, Terminal, Activity Monitor, Spotlight search backend, SQLite layout persistence, hardening audit). Windows-native end-to-end verification has passed: health, fs create/write/list/read/rename/chmod/delete with traversal rejection, Spotlight file + calculator results over a created-then-renamed file, layout persistence round-trip without shape drift, and PTY spawn → Origin-gated WebSocket bridge → binary echo → resize → exit frame → normal close — all driven from Windows against the WSL daemon on `localhost:61234`.
 
-On the app side, Phases 0–7 are complete: Tauri scaffold with daemon spawn/health-check and CSP wiring, window manager core with OS chrome per `UI-SPEC-01`, Finder filesystem workspace, Terminal PTY sessions via `/ws/pty/:sessionId`, Activity Monitor streaming via `/ws/sysmon`, a Monaco-style Editor linked to Finder/Terminal, the Spotlight palette (debounced `GET /api/search?q=`, grouped results, system-wide Ctrl+Shift+Space via `tauri-plugin-global-shortcut`, verified end-to-end from the native Windows app), and Spaces — multi-desktop with Mission Control, drag-to-migrate window cards, space add/remove, and Ctrl+←/→ / Ctrl+1..9 keyboard switching.
+On the app side, all planned phases are complete: Tauri scaffold with daemon spawn/health-check and CSP wiring, window manager core with OS chrome per `UI-SPEC-01`, Finder filesystem workspace, Terminal PTY sessions via `/ws/pty/:sessionId`, Activity Monitor streaming via `/ws/sysmon`, a Monaco-style Editor linked to Finder/Terminal, the Spotlight palette (debounced `GET /api/search?q=`, grouped results, system-wide Ctrl+Shift+Space via `tauri-plugin-global-shortcut`, verified end-to-end from the native Windows app), Spaces — multi-desktop with Mission Control, drag-to-migrate window cards, space add/remove, and Ctrl+←/→ / Ctrl+1..9 keyboard switching — plus the Gallery image browser (`UI-SPEC-12`, grid + Loupe over existing fs endpoints), System Menu and shared modals, Settings with wallpaper management, and layout persistence with debounced writes, viewport clamping, dock magnification, tray actions, and a11y/bundle audits (App Phases 8–10).
 
-The next active work is **App Phase 8 – Persistence and Desktop Polish** (see [`app/Phases/8.md`](./app/Phases/8.md)); its layout persistence depends on **Backend Phase 5**, so the backend should go first. Backend Phase 6 hardening remains future work.
+The next active work is **daily-driver usage**: run the app as the primary WSL workflow and file follow-up issues from real friction. Known open items: Gallery icon gradient drifts from `DESIGN.md` accent tokens, and Trash delete semantics (hard vs recoverable) remain an undecided contract question.
 
-Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet.
+Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet. [`app/design/UI-SPEC-12-Gallery.md`](./app/design/UI-SPEC-12-Gallery.md) is registered but unimplemented (App Phase 5.5); [`app/design/UI-SPEC-13-Spaces.md`](./app/design/UI-SPEC-13-Spaces.md) was written retroactively and is already covered by the shipped App Phase 7.
 
 ## Build order
 
-Build backend capabilities before the UI that consumes them. The current handoff is App Phase 6 complete → App Phase 7 Spaces.
+Build backend capabilities before the UI that consumes them. All planned phases are complete; remaining work is end-to-end verification from the Windows-native checkout.
 
 - [x] Backend Phases 0–3 – foundation, Finder, Terminal, Activity Monitor
 - [x] Backend Phase 4 – Spotlight search backend
 - [x] App Phases 0–5 – scaffold, chrome, window manager, Finder, Terminal, Activity Monitor, Editor
 - [x] App Phase 6 – Spotlight UI and global hotkey
 - [x] App Phase 7 – Spaces and Mission Control
-- [ ] Backend Phase 5 – Persistence
-- [ ] App Phase 8 – Polish and persistence wiring
-- [ ] Backend Phase 6 – Hardening audit
+- [x] Backend Phase 5 – Persistence
+- [x] App Phase 8 – Polish and persistence wiring
+- [x] Backend Phase 6 – Hardening audit
+- [x] App Phase 5.5 – Gallery UI (`UI-SPEC-12`)
+- [x] App Phases 9–10 – System Menu & Modals, Settings + Wallpaper
+- [x] Windows-native end-to-end verification (health, search, PTY, fs ops, persistence)
 
 ### Windows handoff
 

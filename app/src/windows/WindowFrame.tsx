@@ -17,6 +17,11 @@ const SettingsPane = lazy(() =>
   import("../panes/SettingsPane").then((m) => ({ default: m.SettingsPane })),
 );
 
+// Gallery pulls full image bytes; keep it out of the initial bundle.
+const GalleryPane = lazy(() =>
+  import("../panes/gallery/GalleryPane").then((m) => ({ default: m.GalleryPane })),
+);
+
 type Props = {
   win: WindowRecord;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -162,6 +167,7 @@ export function WindowFrame({ win, containerRef }: Props) {
       aria-label={win.title}
       aria-modal="false"
       aria-hidden={win.minimized}
+      data-app-window={win.appId}
       onMouseDown={() => focus(win.id)}
       initial={reduced ? false : { opacity: 0, scale: 0.96, x: initialTranslate.x, y: initialTranslate.y }}
       animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
@@ -267,7 +273,18 @@ export function WindowFrame({ win, containerRef }: Props) {
             <SettingsPane />
           </Suspense>
         )}
-        {!["finder", "terminal", "activity", "editor", "settings"].includes(win.appId) && (
+        {win.appId === "gallery" && (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-text-tertiary" role="status">
+                Loading Gallery…
+              </div>
+            }
+          >
+            <GalleryPane />
+          </Suspense>
+        )}
+        {!["finder", "terminal", "activity", "editor", "settings", "gallery"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />
         )}
       </div>

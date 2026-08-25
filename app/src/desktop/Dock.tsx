@@ -17,6 +17,7 @@ const DOCK_ORDER: DockItem[] = [
   { id: "finder", label: "Finder", icon: appManifest.finder.icon },
   { id: "terminal", label: "Terminal", icon: appManifest.terminal.icon },
   { id: "editor", label: "Editor", icon: appManifest.editor.icon },
+  { id: "gallery", label: "Gallery", icon: appManifest.gallery.icon },
   { id: "activity", label: "Activity", icon: appManifest.activity.icon },
   { id: "settings", label: "Settings", icon: appManifest.settings.icon },
 ];

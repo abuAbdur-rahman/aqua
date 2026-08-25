@@ -73,6 +73,30 @@ export function Desktop() {
   }, []);
 
   useEffect(() => {
+    const onOpenSpotlight = () => setSpotlightOpen(true);
+    window.addEventListener("aqua:open-spotlight", onOpenSpotlight);
+    return () => window.removeEventListener("aqua:open-spotlight", onOpenSpotlight);
+  }, []);
+
+  useEffect(() => {
+    // Kill the WebView's browser context menu everywhere. Apps with their own
+    // context menus (Finder, Gallery) stopPropagation before this fires; apps
+    // without one get right-click disabled. Right-click on the bare desktop
+    // surface opens Spotlight instead.
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-app-window]")) return;
+      if (target.closest("[data-desktop-surface]")) {
+        window.dispatchEvent(new CustomEvent("aqua:open-spotlight"));
+      }
+    };
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => window.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
+  useEffect(() => {
     const onSpaceKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
       // Don't hijack word-jump/undo-style editing keys inside text fields.
@@ -114,7 +138,7 @@ export function Desktop() {
       <div className="absolute inset-0 opacity-[0.015]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")` }} aria-hidden="true" />
 
       {/* Window area explicitly reserved below MenuBar (24px) and above Dock (64px+16) */}
-      <div className="absolute inset-x-0 top-6 bottom-[72px] overflow-hidden">
+      <div className="absolute inset-x-0 top-6 bottom-[72px] overflow-hidden" data-desktop-surface>
         <WindowHost />
       </div>
 

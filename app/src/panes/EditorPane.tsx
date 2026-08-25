@@ -3,6 +3,7 @@ import { FiFile, FiFolder, FiPlus, FiSave, FiX } from "react-icons/fi";
 import { createFile, readFile, writeFile } from "../lib/filesystem";
 import { editorFileState, languageForFile } from "../lib/editorFiles";
 import { useModalStore } from "../system/modalStore";
+import { toast } from "../system/toast";
 import { useWindowStore } from "../windows/store";
 
 // Monaco is heavy; load the editor only when an Editor window actually opens.
@@ -62,7 +63,7 @@ export function EditorPane({ initialPath }: Props) {
   const editorPathRequest = useWindowStore((state) => state.editorPathRequest);
   const clearEditorPathRequest = useWindowStore((state) => state.clearEditorPathRequest);
   const requestConfirm = useModalStore((s) => s.requestConfirm);
-  const requestPrompt = useModalStore((s) => s.requestPrompt);
+  const requestFilePicker = useModalStore((s) => s.requestFilePicker);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const updateTab = useCallback((id: string, update: Partial<EditorTab>) => {
@@ -108,8 +109,10 @@ export function EditorPane({ initialPath }: Props) {
     try {
       await writeFile(active.path, active.content);
       updateTab(active.id, { dirty: false, saveState: "saved" });
-    } catch {
+      toast.success(`Saved “${active.name}”.`);
+    } catch (cause: unknown) {
       updateTab(active.id, { saveState: "error" });
+      toast.error(cause instanceof Error ? cause.message : `Couldn't save “${active.name}”.`);
     }
   }, [active, updateTab]);
 
@@ -124,10 +127,13 @@ export function EditorPane({ initialPath }: Props) {
       .then(() => {
         updateTab(activeTab.id, { path: trimmed, name: basename(trimmed), dirty: false, saveState: "saved" });
         setSaveError(null);
+        toast.success(`Saved “${basename(trimmed)}”.`);
       })
       .catch((cause: unknown) => {
         updateTab(activeTab.id, { saveState: "error" });
-        setSaveError(cause instanceof Error ? cause.message : "Couldn't save file");
+        const message = cause instanceof Error ? cause.message : "Couldn't save file";
+        setSaveError(message);
+        toast.error(message);
       });
   }, [updateTab]);
 
@@ -137,27 +143,25 @@ export function EditorPane({ initialPath }: Props) {
       void save();
       return;
     }
-    requestPrompt({
+    requestFilePicker({
+      mode: "save",
       title: "Save File As",
-      label: "Path",
-      initialValue: "/home/abdulazeez/untitled.txt",
-      submitLabel: "Save",
-      onSubmit: (trimmed) => saveAsUntitled(active, trimmed),
+      defaultName: "untitled.txt",
+      onSubmit: (path) => saveAsUntitled(active, path),
     });
   };
 
   const openFile = () => {
-    requestPrompt({
+    requestFilePicker({
+      mode: "open",
       title: "Open File",
-      label: "Path",
-      submitLabel: "Open",
-      onSubmit: (trimmed) => {
-        const existing = tabs.find((tab) => tab.path === trimmed);
+      onSubmit: (path) => {
+        const existing = tabs.find((tab) => tab.path === path);
         if (existing) {
           setActiveId(existing.id);
           return;
         }
-        const tab = newTab(trimmed);
+        const tab = newTab(path);
         setTabs((current) => [...current, tab]);
         setActiveId(tab.id);
       },

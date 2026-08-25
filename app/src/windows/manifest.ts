@@ -28,6 +28,13 @@ export const appManifest: Record<string, AppManifestEntry> = {
     defaultSize: { w: 800, h: 520 },
     minSize: { w: 480, h: 320 },
   },
+  gallery: {
+    id: "gallery",
+    name: "Gallery",
+    icon: "/icons/icon-gallery.svg",
+    defaultSize: { w: 760, h: 520 },
+    minSize: { w: 480, h: 320 },
+  },
   activity: {
     id: "activity",
     name: "Activity Monitor",

@@ -196,7 +196,7 @@ export function SystemMenu({ daemonState, daemonVersion }: SystemMenuProps) {
         }`}
       >
         {/* Fixed Aqua mark — never changes with focus */}
-        <img src="/icons/aqua-logo.png" alt="" className="block h-3.5 w-3.5 rounded-[3px] object-contain" aria-hidden="true" />
+        <img src="/icons/aqua-logo.png" alt="" className="block h-5 w-7 rounded-[3px] object-cover" aria-hidden="true" />
       </button>
 
       <AnimatePresence>
