@@ -22,6 +22,8 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 | Spotlight | Files + content search, app launcher, quick actions, **system-wide global hotkey** |
 | Gallery UI | Grid browse of images in a folder + full-screen Loupe view. No new daemon endpoints — consumes `fs/list`, `fs/read`, `fs/op`, `/ws/fs-watch` only. Full spec: `design/UI-SPEC-12-Gallery.md`. |
 | Command Center | Searchable palette over every app-menu, window, Space, and system command. `Ctrl+Shift+/`, local hotkey (no Tauri global-shortcut involvement — see `design/UI-SPEC-14-CommandCenter.md` §2). |
+| Trash UI | One recoverable-delete bucket wired to `GET /api/trash/list` + the trash `FsOp`s. Full spec: `design/UI-SPEC-15-Trash.md`. Depends on Backend Phase 1.5. |
+| Import from Windows | Native file dialog → host translates picked paths to `/mnt/*` → daemon `copy` into the open Finder folder. Host returns paths only, never bytes. |
 | Menu bar | Functional, context-sensitive per focused app |
 | Access model | Localhost only, no auth — WebView never loads anything but Aqua |
 
@@ -104,6 +106,7 @@ app/frontend/src/
       FileList.tsx
       PreviewPane.tsx
       useFsWatch.ts
+      useWindowsImport.ts       # invoke pick_windows_files, queue copy ops, progress state
     terminal/
       Terminal.tsx            # xterm.js + WS bridge
     activity-monitor/
@@ -118,6 +121,8 @@ app/frontend/src/
       GalleryGrid.tsx           # virtualized grid, IntersectionObserver lazy-load
       Loupe.tsx                 # full-screen single-image view
       useThumbnailCache.ts      # capped blob-URL cache, concurrency-limited fs/read queue
+    trash/
+      TrashPane.tsx             # one bucket of trashed items: list, restore, permanent delete, empty
   lib/
     ws.ts                      # typed WS channel multiplexer, points at localhost:61234
     api.ts                     # typed REST client, points at localhost:61234
@@ -154,9 +159,10 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 |---|---|---|
 | `GET /api/health` | REST | Used by the Tauri host at startup |
 | `GET /api/fs/list?path=` | REST | Directory listing |
-| `POST /api/fs/op` | REST | Create/rename/move/delete/chmod |
+| `POST /api/fs/op` | REST | Create/rename/move/copy/trash/chmod |
 | `GET /api/fs/read?path=` | REST | File content for editor/preview |
 | `PUT /api/fs/write` | REST | Save file content |
+| `GET /api/trash/list` | REST | Trashed-item bucket for the Trash window (Backend Phase 1.5) |
 | `WS /ws/fs-watch` | WS | Push fs change events to active Finder windows |
 | `WS /ws/pty/:session_id` | WS | Bidirectional pty byte stream |
 | `POST /api/pty/spawn` | REST | New terminal session, returns session_id |
@@ -172,10 +178,12 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 | 0 — Scaffold | `npm create tauri-app@latest`; Rust host spawns/health-checks the daemon; frameless window rendering wallpaper + empty Dock + empty MenuBar per `../DESIGN.md`; confirm WebView → daemon WS round-trip |
 | 1 — Window manager core | Drag, resize, focus/z-order, minimize-to-dock, single Space, generic `WindowFrame` |
 | 2 — Finder UI | Read-only list/icon view → full CRUD → live refresh via fs-watch → Quick Look preview pane |
+| 2.5 — Import from Windows | `pick_windows_files` Tauri command + `/mnt/*` path translation (paths only, never bytes), wired to the daemon's `copy` FsOp — depends on Backend Phase 1.5 |
 | 3 — Terminal UI | xterm.js wired to `/ws/pty/:id`, multi-tab within one window |
 | 4 — Activity Monitor UI | Live CPU/mem/disk charts, process list, wired to `/ws/sysmon` |
 | 5 — Editor UI | Monaco integration, open-from-Finder, save-to-disk, multi-tab |
 | 5.5 — Gallery UI | Grid + Loupe, wired to existing `fs/list`/`fs/read`/`fs/op`/`fs-watch` — no backend dependency beyond what Backend Phase 1 (Finder backend) already ships. Spec: `design/UI-SPEC-12-Gallery.md` |
+| 5.6 — Trash UI | List view wired to `GET /api/trash/list`, Restore / Delete Permanently / Empty Trash, fs-watch refresh. Spec: `design/UI-SPEC-15-Trash.md`. Depends on Backend Phase 1.5 |
 | 6 — Spotlight | Global hotkey palette wired to `/api/search`, file search + app launch + quick actions |
 | 7 — Spaces | Multiple desktops, keyboard/gesture switching, Mission Control overview. Spec: `design/UI-SPEC-13-Spaces.md`. New `DESIGN.md` motion tokens proposed there (§7) — not yet applied, needs its own append before this phase starts. |
 | 8 — Polish | Layout persistence wired end-to-end, per-app menu bar contents, dock magnification, window animations, tray menu |

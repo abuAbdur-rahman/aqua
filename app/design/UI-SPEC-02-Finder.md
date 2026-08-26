@@ -30,6 +30,8 @@ Three-pane layout, sidebar and preview pane both collapsible (preview pane is cl
 
 **Row interactions:** single click selects (row gets `--accent-bg`), double-click on `dir` navigates in, double-click on `file` opens in Editor (or triggers Quick Look if the file type isn't editable — image/PDF). Right-click → context menu: New Folder, Rename, Move to Trash, Get Info, Open in Terminal (spawns a `POST /api/pty/spawn` with `cwd` set to that folder — the one deliberate cross-app hook Finder has).
 
+**Delete semantics:** the destructive item is conditional on `FsEntry.isTrashable` — "Move to Trash" (`{op:"moveToTrash"}`, recoverable, no confirmation) when true; "Delete Permanently" when false (Windows-mounted `/mnt/*` path), which routes through the Confirmation Modal since it's irreversible: "Delete {name} permanently? This can't be undone." Either way the same wire op goes out and the daemon decides.
+
 ## Preview pane (Quick Look)
 
 Per `../PLAN.md` §1: images render inline, PDFs paginate, markdown/code render (not raw-dump). Header of the pane shows filename + size; body swaps by kind:

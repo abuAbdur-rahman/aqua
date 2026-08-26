@@ -183,8 +183,9 @@ export function Dock() {
             ref={trashRef}
             aria-label="Trash"
             title="Trash"
+            onClick={() => openApp("trash")}
             style={{ width: trashSize, height: trashSize } as unknown as React.CSSProperties}
-            className="flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent"
           >
             <img src="/icons/icon-trash.svg" alt="" className="h-8 w-8 object-contain" aria-hidden="true" />
           </motion.button>

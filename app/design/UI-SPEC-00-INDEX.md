@@ -19,6 +19,8 @@ Read `app/AGENTS.md` and `DESIGN.md` before any of these. These specs assume bot
 | `UI-SPEC-09-Settings.md` | Settings, appearance, wallpaper, daemon, and About panes |
 | `UI-SPEC-10-FilePicker.md` | Open/Save file-picker sheet shared by Editor, Settings' wallpaper picker, and future callers |
 | `UI-SPEC-11-Greeter.md` | Boot Greeter — pre-daemon startup/health-check screen with retry state |
+| `UI-SPEC-14-CommandCenter.md` | Command Center — searchable action palette |
+| `UI-SPEC-15-Trash.md` | Trash — recoverable delete bucket, restore/permanent-delete/empty |
 
 ## Conventions used across every spec
 

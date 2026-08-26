@@ -11,9 +11,9 @@ export interface Toast {
   message: string;
 }
 
-interface ToastState {
+export interface ToastState {
   toasts: Toast[];
-  push: (kind: ToastKind, message: string, ttl?: number) => void;
+  push: (kind: ToastKind, message: string, ttl?: number) => Toast;
   dismiss: (id: number) => void;
 }
 
@@ -22,11 +22,13 @@ const timers = new Map<number, number>();
 
 export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
-  push: (kind, message, ttl = 4000) => {
+  push: (kind, message, ttl = 4000): Toast => {
     const id = nextId++;
-    set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }));
+    const item: Toast = { id, kind, message };
+    set((s) => ({ toasts: [...s.toasts, item] }));
     const timer = window.setTimeout(() => get().dismiss(id), ttl);
     timers.set(id, timer);
+    return item;
   },
   dismiss: (id) => {
     const timer = timers.get(id);

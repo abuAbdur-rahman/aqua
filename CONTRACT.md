@@ -29,6 +29,10 @@ interface FsEntry {
   size: number;        // bytes
   modified: string;    // ISO 8601
   permissions: string; // octal, e.g. "755"
+  isTrashable: boolean; // true if WSL-native (Move to Trash applies); false if under a
+                        // Windows mount (e.g. /mnt/c/...) — those hard-delete immediately,
+                        // no recovery. Computed server-side so the frontend never
+                        // re-implements mount detection.
 }
 ```
 
@@ -40,11 +44,16 @@ type FsOp =
   | { op: "createDir"; path: string }
   | { op: "rename"; path: string; newName: string }
   | { op: "move"; path: string; to: string }
-  | { op: "delete"; path: string }
+  | { op: "copy"; path: string; to: string }              // source left in place; auto-renames on a name conflict at the destination
+  | { op: "moveToTrash"; path: string }                   // WSL-native: moves into the internal trash dir, returns trashId.
+                                                          // Windows-mounted (/mnt/*): hard-deletes immediately — same wire call either way.
+  | { op: "restoreFromTrash"; trashId: string }
+  | { op: "permanentDelete"; trashId: string }            // single trashed item, forever
+  | { op: "emptyTrash" }
   | { op: "chmod"; path: string; mode: string }; // octal string, e.g. "755"
 
 type FsOpResponse =
-  | { success: true }
+  | { success: true; trashId?: string } // trashId present only on a moveToTrash that actually went to Trash (not the Windows-mount hard-delete case)
   | { success: false; error: string };
 ```
 
@@ -90,6 +99,23 @@ interface FsWatchEvent {
   entry?: FsEntry;
 }
 ```
+
+## Trash
+
+`GET /api/trash/list`
+
+```ts
+interface TrashEntry {
+  id: string;
+  originalPath: string;
+  name: string;
+  kind: "file" | "dir" | "symlink";
+  size: number;     // bytes
+  deletedAt: string; // ISO 8601
+}
+```
+
+Trashed items live in a daemon-internal trash directory (`~/.local/share/aqua/Trash/`). Items auto-purge after 7 days (checked at daemon startup and on a low-frequency interval). Restore recreates missing parent directories and auto-renames on a name conflict at `originalPath`. Mutations go through `POST /api/fs/op` (`moveToTrash`, `restoreFromTrash`, `permanentDelete`, `emptyTrash`).
 
 ## Terminal
 
@@ -289,11 +315,15 @@ type FsOp =
   | { op: "createDir"; path: string; elevated?: boolean }
   | { op: "rename"; path: string; newName: string; elevated?: boolean }
   | { op: "move"; path: string; to: string; elevated?: boolean }
-  | { op: "delete"; path: string; elevated?: boolean }
+  | { op: "copy"; path: string; to: string; elevated?: boolean }
+  | { op: "moveToTrash"; path: string; elevated?: boolean }
+  | { op: "restoreFromTrash"; trashId: string; elevated?: boolean }
+  | { op: "permanentDelete"; trashId: string; elevated?: boolean }
+  | { op: "emptyTrash"; elevated?: boolean }
   | { op: "chmod"; path: string; mode: string; elevated?: boolean };
 
 type FsOpResponse =
-  | { success: true }
+  | { success: true; trashId?: string }
   | { success: false; error: string; needsElevation?: boolean };
 ```
 

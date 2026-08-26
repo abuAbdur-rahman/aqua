@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import { FiArrowLeft, FiArrowUp, FiChevronDown, FiImage, FiRefreshCw } from "react-icons/fi";
 import {
   ApiError,
-  deleteEntry,
   listDirectory,
+  moveToTrash,
   NeedsElevationError,
   renameEntry,
   type FsEntry,
@@ -235,28 +235,36 @@ export function GalleryPane() {
     });
   };
 
-  const deleteEntryByPath = (targetPath: string) => {
+  const trashEntryByPath = (targetPath: string) => {
     const target = images.find((image) => image.path === targetPath);
     if (!target) return;
+    // Mirrors Finder: WSL-native paths move to the recoverable Trash bucket
+    // without a confirmation; Windows-mounted paths can only be hard-deleted,
+    // so they get the irreversible-action modal first.
+    const dispatch = () => {
+      void moveToTrash(target.path)
+        .then(() => toast.success(`Moved “${target.name}” to Trash.`))
+        .catch((cause: unknown) => {
+          if (handleNeedsElevation(cause, `moveToTrash ${target.path}`, async () => { await moveToTrash(target.path, true); }, "Couldn't move image to Trash")) return;
+          toast.error(cause instanceof Error ? cause.message : "Couldn't move image to Trash");
+        });
+    };
+    if (target.isTrashable) {
+      dispatch();
+      return;
+    }
     requestConfirm({
-      title: `Move “${target.name}” to Trash?`,
-      body: `${target.path} will be removed from disk.`,
+      title: `Delete “${target.name}” permanently?`,
+      body: `${target.path} is on a Windows mount and will be removed from disk. This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
-      onConfirm: () => {
-        void deleteEntry(target.path)
-          .then(() => toast.success(`Deleted “${target.name}”.`))
-          .catch((cause: unknown) => {
-            if (handleNeedsElevation(cause, `delete ${target.path}`, async () => { await deleteEntry(target.path, true); }, "Couldn't delete image")) return;
-            toast.error(cause instanceof Error ? cause.message : "Couldn't delete image");
-          });
-      },
+      onConfirm: dispatch,
     });
   };
 
-  const deleteSelected = () => {
+  const trashSelected = () => {
     if (!primary) return;
-    deleteEntryByPath(primary.path);
+    trashEntryByPath(primary.path);
   };
 
   const revealInFinder = (targetPath: string) => {
@@ -290,8 +298,8 @@ export function GalleryPane() {
         case "rename":
           renameEntryByPath(primary.path);
           break;
-        case "delete":
-          deleteEntryByPath(primary.path);
+        case "moveToTrash":
+          trashEntryByPath(primary.path);
           break;
         case "reveal":
           revealInFinder(primary.path);
@@ -346,7 +354,7 @@ export function GalleryPane() {
     }
     if (event.key === "Delete" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      deleteSelected();
+      trashSelected();
     }
   };
 
@@ -535,7 +543,7 @@ export function GalleryPane() {
           onNext={() => stepLoupe(1)}
           onRetry={() => cache.request(sortedImages[loupeIndex].path, true)}
           onRename={() => renameEntryByPath(sortedImages[loupeIndex].path)}
-          onDelete={() => deleteEntryByPath(sortedImages[loupeIndex].path)}
+          onDelete={() => trashEntryByPath(sortedImages[loupeIndex].path)}
           onReveal={() => revealInFinder(sortedImages[loupeIndex].path)}
         />
       )}
@@ -554,7 +562,7 @@ export function GalleryPane() {
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { renameEntryByPath(menu.entry.path); setMenu(null); }}>
               Rename
             </button>
-            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-status-danger hover:bg-bg-hover" onClick={() => { deleteEntryByPath(menu.entry.path); setMenu(null); }}>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-status-danger hover:bg-bg-hover" onClick={() => { trashEntryByPath(menu.entry.path); setMenu(null); }}>
               Move to Trash
             </button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { revealInFinder(menu.entry.path); setMenu(null); }}>

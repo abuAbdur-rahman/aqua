@@ -22,6 +22,11 @@ const GalleryPane = lazy(() =>
   import("../panes/gallery/GalleryPane").then((m) => ({ default: m.GalleryPane })),
 );
 
+// Trash is a secondary surface; load it only when opened.
+const TrashPane = lazy(() =>
+  import("../panes/trash/TrashPane").then((m) => ({ default: m.TrashPane })),
+);
+
 type Props = {
   win: WindowRecord;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -290,7 +295,18 @@ export function WindowFrame({ win, containerRef, spaceVisible = true }: Props) {
             <GalleryPane />
           </Suspense>
         )}
-        {!["finder", "terminal", "activity", "editor", "settings", "gallery"].includes(win.appId) && (
+        {win.appId === "trash" && (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-text-tertiary" role="status">
+                Loading Trash…
+              </div>
+            }
+          >
+            <TrashPane />
+          </Suspense>
+        )}
+        {!["finder", "terminal", "activity", "editor", "settings", "gallery", "trash"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />
         )}
       </div>

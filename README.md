@@ -42,6 +42,8 @@ The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 
 | Spotlight | Files + app launch + quick actions + global hotkey |
 | Gallery | Grid + full-screen image browsing, folder-scoped. No new daemon surface. |
 | Command Center | `Ctrl+Shift+/` action palette — window, Space, app-menu, and system commands. No new daemon surface. |
+| Trash | Recoverable delete for WSL-native paths, permanent for Windows-mounted paths. Full spec: `app/design/UI-SPEC-15-Trash.md`. |
+| Import from Windows | Native dialog → host translates picked paths to `/mnt/*` (paths only, never bytes) → daemon `copy` into the open Finder folder. |
 | Menu bar | Functional, context-sensitive per app |
 | Theme | Dark mode only — see `DESIGN.md` |
 
@@ -94,9 +96,9 @@ Backend Phases 0–6 are complete and verified (foundation, Finder, Terminal, Ac
 
 On the app side, all planned phases are complete: Tauri scaffold with daemon spawn/health-check and CSP wiring, window manager core with OS chrome per `UI-SPEC-01`, Finder filesystem workspace, Terminal PTY sessions via `/ws/pty/:sessionId`, Activity Monitor streaming via `/ws/sysmon`, a Monaco-style Editor linked to Finder/Terminal, the Spotlight palette (debounced `GET /api/search?q=`, grouped results, system-wide Ctrl+Shift+Space via `tauri-plugin-global-shortcut`, verified end-to-end from the native Windows app), Spaces — multi-desktop with Mission Control, drag-to-migrate window cards, space add/remove, and Ctrl+←/→ / Ctrl+1..9 keyboard switching — plus the Gallery image browser (`UI-SPEC-12`, grid + Loupe over existing fs endpoints), System Menu and shared modals, Settings with wallpaper management, and layout persistence with debounced writes, viewport clamping, dock magnification, tray actions, and a11y/bundle audits (App Phases 8–10).
 
-The next active work is **daily-driver usage**: run the app as the primary WSL workflow and file follow-up issues from real friction. Known open items: Gallery icon gradient drifts from `DESIGN.md` accent tokens, and Trash delete semantics (hard vs recoverable) remain an undecided contract question.
+The next active work is **daily-driver usage**: run the app as the primary WSL workflow and file follow-up issues from real friction. Known open items: Gallery icon gradient drifts from `DESIGN.md` accent tokens, and the full-trash Dock icon variant (see `UI-SPEC-15` §5).
 
-Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet. [`app/design/UI-SPEC-12-Gallery.md`](./app/design/UI-SPEC-12-Gallery.md) is registered but unimplemented (App Phase 5.5); [`app/design/UI-SPEC-13-Spaces.md`](./app/design/UI-SPEC-13-Spaces.md) was written retroactively and is already covered by the shipped App Phase 7.
+Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet. [`app/design/UI-SPEC-12-Gallery.md`](./app/design/UI-SPEC-12-Gallery.md) is registered but unimplemented (App Phase 5.5); [`app/design/UI-SPEC-13-Spaces.md`](./app/design/UI-SPEC-13-Spaces.md) was written retroactively and is already covered by the shipped App Phase 7. Root `APPEND_TRASH.md` + `APPEND_WINDOWS_IMPORT.md` and [`app/design/UI-SPEC-15-Trash.md`](./app/design/UI-SPEC-15-Trash.md) are the approved Trash / Windows-import contract additions (Backend Phase 1.5, App Phases 2.5/5.6) — daemon side pending with the WSL agent.
 
 ## Build order
 

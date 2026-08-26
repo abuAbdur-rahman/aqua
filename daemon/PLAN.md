@@ -55,9 +55,10 @@ daemon/
   src/
     main.rs              # server bootstrap, router assembly
     fs/
-      mod.rs              # list, read, write, create, move, delete, chmod
+      mod.rs              # list, read, write, create, move, copy, trash ops, chmod
       watch.rs             # notify-based watcher -> WS broadcast
       preview.rs           # thumbnail/preview generation dispatch
+      trash.rs             # moveToTrash / restore / permanentDelete / emptyTrash + 7-day purge sweep
     pty/
       mod.rs               # session manager (spawn, resize, kill)
       ws.rs                # WS <-> pty byte stream bridge
@@ -80,9 +81,10 @@ daemon/
 |---|---|---|
 | `GET /api/health` | REST | Liveness check — used by the Tauri host at startup |
 | `GET /api/fs/list?path=` | REST | Directory listing |
-| `POST /api/fs/op` | REST | Create/rename/move/delete/chmod (op in body) |
+| `POST /api/fs/op` | REST | Create/rename/move/copy/trash/chmod (op in body) |
 | `GET /api/fs/read?path=` | REST | File content for editor/preview |
 | `PUT /api/fs/write` | REST | Save file content |
+| `GET /api/trash/list` | REST | Trashed-item bucket — restore/permanent-delete/empty go through `/api/fs/op` |
 | `WS /ws/fs-watch` | WS | Push fs change events for active Finder windows |
 | `WS /ws/pty/:session_id` | WS | Bidirectional pty byte stream |
 | `POST /api/pty/spawn` | REST | New terminal session, returns session_id |
@@ -129,6 +131,16 @@ CREATE TABLE prefs (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE trash (
+  id TEXT PRIMARY KEY,
+  original_path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,          -- 'file' | 'dir' | 'symlink'
+  size INTEGER,
+  deleted_at TIMESTAMP NOT NULL,
+  trash_path TEXT NOT NULL      -- current location inside the internal trash dir
+);
 ```
 
 Layout writes arrive already debounced from the frontend (~1s after last change) — no need to debounce again server-side.
@@ -147,6 +159,7 @@ Layout writes arrive already debounced from the frontend (~1s after last change)
 |---|---|
 | 0 – Scaffold | `cargo new daemon`; `axum` router with `GET /api/health` and a WS echo route; confirm reachable from Windows via `http://localhost:61234` |
 | 1 — Finder backend | Read-only `fs/list` + `fs/read` → full CRUD (`fs/op`, `fs/write`) → `notify` watcher + `/ws/fs-watch` |
+| 1.5 — Trash | `moveToTrash`/`restoreFromTrash`/`permanentDelete`/`emptyTrash` (+ `copy`), `trash` table, `GET /api/trash/list`, 7-day purge sweep, `FsEntry.isTrashable` — natural extension of the Finder backend, same phase family |
 | 2 — Terminal backend | `portable-pty` session manager, `/api/pty/spawn`, `/ws/pty/:id` bridge, resize handling, cleanup on disconnect |
 | 3 — Activity Monitor backend | `sysinfo` polling loop, `/ws/sysmon` broadcast |
 | 4 — Spotlight backend | `tantivy` indexer, incremental updates via `notify`, `/api/search` (files + app metadata + quick actions) |

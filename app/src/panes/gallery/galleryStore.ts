@@ -27,7 +27,7 @@ export const useGalleryUiStore = create<GalleryUiState>((set) => ({
 }));
 
 /** Menu-bar → pane action channel (same CustomEvent pattern as Dock context). */
-export type GalleryMenuAction = "rename" | "delete" | "reveal" | "info";
+export type GalleryMenuAction = "rename" | "moveToTrash" | "reveal" | "info";
 
 export function dispatchGalleryAction(action: GalleryMenuAction): void {
   window.dispatchEvent(new CustomEvent("aqua-gallery-action", { detail: { action } }));

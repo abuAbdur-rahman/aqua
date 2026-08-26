@@ -9,6 +9,16 @@ export interface FsEntry {
   size: number;
   modified: string;
   permissions: string;
+  isTrashable: boolean;
+}
+
+export interface TrashEntry {
+  id: string;
+  originalPath: string;
+  name: string;
+  kind: FsEntryKind;
+  size: number;
+  deletedAt: string;
 }
 
 export interface FsReadResponse {
@@ -23,14 +33,18 @@ export type FsOp =
   | { op: "createDir"; path: string; elevated?: boolean }
   | { op: "rename"; path: string; newName: string; elevated?: boolean }
   | { op: "move"; path: string; to: string; elevated?: boolean }
-  | { op: "delete"; path: string; elevated?: boolean }
+  | { op: "copy"; path: string; to: string; elevated?: boolean }
+  | { op: "moveToTrash"; path: string; elevated?: boolean }
+  | { op: "restoreFromTrash"; trashId: string; elevated?: boolean }
+  | { op: "permanentDelete"; trashId: string; elevated?: boolean }
+  | { op: "emptyTrash"; elevated?: boolean }
   | { op: "chmod"; path: string; mode: string; elevated?: boolean };
 
 export class NeedsElevationError extends Error {
   constructor(
     message: string,
     readonly op: string,
-    readonly path: string,
+    readonly path = "",
   ) {
     super(message);
     this.name = "NeedsElevationError";
@@ -70,7 +84,11 @@ function parseEntry(value: unknown): FsEntry {
   ) {
     throw new Error("Daemon returned an invalid filesystem entry");
   }
-  return value as unknown as FsEntry;
+  // Older daemons predate isTrashable; absent means "not known to be
+  // recoverable", which degrades to the previous hard-delete behavior.
+  const entry = value as unknown as FsEntry;
+  entry.isTrashable = value.isTrashable === true;
+  return entry;
 }
 
 async function request(path: string, init: RequestInit): Promise<unknown> {
@@ -112,7 +130,7 @@ export async function readFile(path: string): Promise<FsReadResponse> {
   return payload as unknown as FsReadResponse;
 }
 
-async function runOperation(operation: FsOp): Promise<void> {
+async function runOperation(operation: FsOp): Promise<string | undefined> {
   const payload = await request("/api/fs/op", {
     method: "POST",
     body: JSON.stringify(operation),
@@ -123,7 +141,7 @@ async function runOperation(operation: FsOp): Promise<void> {
       throw new NeedsElevationError(
         typeof body.error === "string" ? body.error : "This operation requires elevation",
         operation.op,
-        operation.path,
+        "path" in operation ? String(operation.path) : "",
       );
     }
     throw new Error(typeof body.error === "string" ? body.error : "Operation failed");
@@ -131,6 +149,7 @@ async function runOperation(operation: FsOp): Promise<void> {
   if (!isRecord(payload) || payload.success !== true) {
     throw new Error("Daemon returned an invalid operation response");
   }
+  return payload.trashId === undefined ? undefined : String(payload.trashId);
 }
 
 export function createFile(path: string, elevated = false) {
@@ -147,8 +166,49 @@ export function renameEntry(path: string, newName: string, elevated = false) {
   );
 }
 
-export function deleteEntry(path: string, elevated = false) {
-  return runOperation(elevated ? { op: "delete", path, elevated } : { op: "delete", path });
+// Resolves to the trashId when the item went to the Trash bucket, or undefined
+// when the daemon hard-deleted it (Windows-mounted path — nothing recoverable).
+export function moveToTrash(path: string, elevated = false): Promise<string | undefined> {
+  return runOperation(elevated ? { op: "moveToTrash", path, elevated } : { op: "moveToTrash", path });
+}
+
+export function restoreFromTrash(trashId: string, elevated = false) {
+  return runOperation(
+    elevated ? { op: "restoreFromTrash", trashId, elevated } : { op: "restoreFromTrash", trashId },
+  );
+}
+
+export function permanentDelete(trashId: string, elevated = false) {
+  return runOperation(
+    elevated ? { op: "permanentDelete", trashId, elevated } : { op: "permanentDelete", trashId },
+  );
+}
+
+export function emptyTrash(elevated = false) {
+  return runOperation(elevated ? { op: "emptyTrash", elevated } : { op: "emptyTrash" });
+}
+
+export function copyPath(path: string, to: string, elevated = false) {
+  return runOperation(elevated ? { op: "copy", path, to, elevated } : { op: "copy", path, to });
+}
+
+export async function listTrash(): Promise<TrashEntry[]> {
+  const payload = await request("/api/trash/list", { method: "GET" });
+  if (!Array.isArray(payload)) throw new Error("Daemon returned an invalid trash listing");
+  return payload.map((value: unknown): TrashEntry => {
+    if (
+      !isRecord(value) ||
+      typeof value.id !== "string" ||
+      typeof value.originalPath !== "string" ||
+      typeof value.name !== "string" ||
+      !["file", "dir", "symlink"].includes(String(value.kind)) ||
+      typeof value.size !== "number" ||
+      typeof value.deletedAt !== "string"
+    ) {
+      throw new Error("Daemon returned an invalid trash entry");
+    }
+    return value as unknown as TrashEntry;
+  });
 }
 
 export async function writeFile(path: string, content: string): Promise<string> {

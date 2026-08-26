@@ -21,6 +21,7 @@ function entry(overrides: Partial<FsEntry> = {}): FsEntry {
     size: 100,
     modified: "2026-01-01T00:00:00Z",
     permissions: "rw-r--r--",
+    isTrashable: true,
     ...overrides,
   };
 }

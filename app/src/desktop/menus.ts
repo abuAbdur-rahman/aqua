@@ -99,10 +99,10 @@ export function buildAppMenus(appId: string, focusedId: string | null): AppMenuG
             onSelect: () => dispatchGalleryAction("rename"),
           },
           {
-            id: "image-delete",
+            id: "image-move-to-trash",
             label: "Move to Trash",
             enabled: gallery.hasSelection,
-            onSelect: () => dispatchGalleryAction("delete"),
+            onSelect: () => dispatchGalleryAction("moveToTrash"),
           },
           {
             id: "image-reveal",

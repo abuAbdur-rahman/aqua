@@ -282,6 +282,54 @@ async fn greet(name: String) -> Result<String, String> {
     Ok(format!("Hello, {}! You've been greeted from Rust!", name))
 }
 
+// Translate one Windows path into its WSL drive-mount form:
+// C:\Users\dev\x.jpg -> /mnt/c/Users/dev/x.jpg. UNC / network paths have no
+// drive-mount equivalent, so they are refused rather than mistranslated.
+fn to_wsl_mount(path: &std::path::Path) -> Result<String, ()> {
+    let mut components = path.components();
+    let drive = match components.next() {
+        Some(std::path::Component::Prefix(prefix)) => match prefix.kind() {
+            std::path::Prefix::Disk(byte) => (byte as char).to_ascii_lowercase(),
+            _ => return Err(()),
+        },
+        _ => return Err(()),
+    };
+    let rest = components
+        .filter(|c| !matches!(c, std::path::Component::RootDir))
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    Ok(format!("/mnt/{drive}/{rest}"))
+}
+
+// Native OS picker for Finder's "Import from Windows..." action (multi-select).
+// OS-integration glue on purpose: the host hands back translated WSL-mount
+// *paths only* — never bytes — so the actual copy still goes through the
+// daemon's fs API like every other file operation.
+#[tauri::command]
+async fn pick_windows_files() -> Result<Vec<String>, String> {
+    let files = rfd::AsyncFileDialog::new()
+        .set_title("Import from Windows")
+        .pick_files()
+        .await
+        .unwrap_or_default();
+
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut translated = Vec::with_capacity(files.len());
+    for file in files {
+        match to_wsl_mount(file.path()) {
+            Ok(path) => translated.push(path),
+            Err(()) => {
+                return Err("Network locations aren't supported for import yet.".to_string());
+            }
+        }
+    }
+    Ok(translated)
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
@@ -328,6 +376,7 @@ pub fn run() {
             quit_and_stop_daemon,
             get_distro,
             pick_images,
+            pick_windows_files,
             restart_wsl_distro
         ])
         .manage(DaemonChild(Mutex::new(None)))

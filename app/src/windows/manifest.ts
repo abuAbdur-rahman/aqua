@@ -49,4 +49,11 @@ export const appManifest: Record<string, AppManifestEntry> = {
     defaultSize: { w: 720, h: 480 },
     minSize: { w: 560, h: 380 },
   },
+  trash: {
+    id: "trash",
+    name: "Trash",
+    icon: "/icons/icon-trash.svg",
+    defaultSize: { w: 640, h: 440 },
+    minSize: { w: 400, h: 280 },
+  },
 };

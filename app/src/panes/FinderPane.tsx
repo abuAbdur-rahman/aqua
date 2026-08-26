@@ -5,6 +5,7 @@ import {
   FiChevronDown,
   FiChevronRight,
   FiCode,
+  FiDownload,
   FiEdit3,
   FiEye,
   FiEyeOff,
@@ -26,8 +27,8 @@ import {
   ApiError,
   createDirectory,
   createFile,
-  deleteEntry,
   listDirectory,
+  moveToTrash,
   NeedsElevationError,
   readFile,
   renameEntry,
@@ -37,6 +38,7 @@ import { useFsWatch } from "../lib/useFsWatch";
 import { useModalStore } from "../system/modalStore";
 import { toast } from "../system/toast";
 import { useWindowStore } from "../windows/store";
+import { useWindowsImport } from "./finder/useWindowsImport";
 
 type ViewMode = "list" | "icons";
 type LoadState = "loading" | "empty" | "populated" | "error";
@@ -173,6 +175,7 @@ export function FinderPane() {
   const requestConfirm = useModalStore((s) => s.requestConfirm);
   const requestFilePicker = useModalStore((s) => s.requestFilePicker);
   const requestPrompt = useModalStore((s) => s.requestPrompt);
+  const { importing, importFromWindows } = useWindowsImport(() => path, () => void load());
 
   const visibleEntries = useMemo(
     () => (showHidden ? entries : entries.filter((entry) => !entry.name.startsWith("."))),
@@ -404,21 +407,40 @@ export function FinderPane() {
 
   const remove = () => {
     if (!selected) return;
+    const target = selected;
+    const finish = () => {
+      setSelectedPath(null);
+      setPreview(null);
+      return load();
+    };
+    // WSL-native paths go to the recoverable Trash bucket, no confirmation —
+    // that's the point of it being recoverable. Windows-mounted paths can only
+    // be hard-deleted, so they get the irreversible-action modal.
+    if (target.isTrashable) {
+      void moveToTrash(target.path)
+        .then(() => {
+          toast.success(`Moved “${target.name}” to Trash.`);
+          return finish();
+        })
+        .catch((cause: unknown) => {
+          if (handleNeedsElevation(cause, `moveToTrash ${target.path}`, async () => { await moveToTrash(target.path, true); await finish(); }, "Couldn't move item to Trash")) return;
+          toast.error(cause instanceof Error ? cause.message : "Couldn't move item to Trash");
+        });
+      return;
+    }
     requestConfirm({
-      title: `Delete “${selected.name}” permanently?`,
-      body: `${selected.path} will be removed from disk.`,
+      title: `Delete “${target.name}” permanently?`,
+      body: `${target.path} is on a Windows mount and will be removed from disk. This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
       onConfirm: () => {
-        void deleteEntry(selected.path)
+        void moveToTrash(target.path)
           .then(() => {
-            setSelectedPath(null);
-            setPreview(null);
-            toast.success(`Deleted “${selected.name}”.`);
-            return load();
+            toast.success(`Deleted “${target.name}”.`);
+            return finish();
           })
           .catch((cause: unknown) => {
-            if (handleNeedsElevation(cause, `delete ${selected.path}`, async () => { await deleteEntry(selected.path, true); setSelectedPath(null); setPreview(null); await load(); }, "Couldn't delete item")) return;
+            if (handleNeedsElevation(cause, `delete ${target.path}`, async () => { await moveToTrash(target.path, true); await finish(); }, "Couldn't delete item")) return;
             toast.error(cause instanceof Error ? cause.message : "Couldn't delete item");
           });
       },
@@ -496,6 +518,7 @@ export function FinderPane() {
           <div className="flex items-center gap-0.5" role="toolbar" aria-label="Finder actions">
             {sidebarAction("New file", <FiFilePlus aria-hidden="true" />, newFile)}
             {sidebarAction("New folder", <FiFolderPlus aria-hidden="true" />, newFolder)}
+            {sidebarAction(importing ? "Importing…" : "Import from Windows…", <FiDownload aria-hidden="true" />, () => void importFromWindows())}
             {sidebarAction("Refresh", <FiRefreshCw aria-hidden="true" />, () => void load())}
             {sidebarAction("Parent folder", <FiArrowUp aria-hidden="true" />, () => setPath(parentPath(path)))}
             {sidebarAction(showHidden ? "Hide hidden files" : "Show hidden files", showHidden ? <FiEye aria-hidden="true" /> : <FiEyeOff aria-hidden="true" />, () => setShowHidden((value) => !value))}
@@ -533,7 +556,7 @@ export function FinderPane() {
           <div className="mt-3 flex min-h-0 flex-1 flex-col border-t border-bg-hover pt-2">
             <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Folders</div>
             <div className="min-h-0 flex-1 overflow-auto">
-              <TreeRow entry={{ name: "Home", path: HOME_PATH, kind: "dir", size: 0, modified: "", permissions: "" }} depth={0} showHidden={showHidden} onOpen={(target) => { setPath(target); setSelectedPath(null); setPreview(null); }} />
+              <TreeRow entry={{ name: "Home", path: HOME_PATH, kind: "dir", size: 0, modified: "", permissions: "", isTrashable: true }} depth={0} showHidden={showHidden} onOpen={(target) => { setPath(target); setSelectedPath(null); setPreview(null); }} />
             </div>
           </div>
         </aside>
@@ -615,7 +638,7 @@ export function FinderPane() {
           </>}
           {menu.entry && <>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { renameSelected(); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Rename</button>
-            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-status-danger hover:bg-bg-hover" onClick={() => { remove(); setMenu(null); }}><FiTrash2 aria-hidden="true" /> Delete</button>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-status-danger hover:bg-bg-hover" onClick={() => { remove(); setMenu(null); }}><FiTrash2 aria-hidden="true" /> {menu.entry.isTrashable ? "Move to Trash" : "Delete Permanently"}</button>
           </>}
           {!menu.entry && <>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { newFile(); setMenu(null); }}><FiFile aria-hidden="true" /> New file</button>

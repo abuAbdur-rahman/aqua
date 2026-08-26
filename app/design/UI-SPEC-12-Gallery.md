@@ -65,13 +65,13 @@ type GalleryAction =
   | { type: "closeLoupe" }
   | { type: "navigate"; direction: "prev" | "next" }
   | { type: "rename"; path: string; newName: string }   // -> POST /api/fs/op {op:"rename"}
-  | { type: "delete"; path: string }                     // -> POST /api/fs/op {op:"delete"}
+  | { type: "moveToTrash"; path: string }                 // -> POST /api/fs/op {op:"moveToTrash"} (daemon hard-deletes /mnt/* paths)
   | { type: "revealInFinder"; path: string }              // opens/focuses Finder window at parent dir
   | { type: "getInfo"; path: string }                     // reuses Finder's existing Get Info panel
   | { type: "openInFinder"; path: string };
 ```
 
-Rename and delete are handled exactly like Finder's own — Gallery doesn't introduce new delete/rename semantics (no separate "Move to Trash" behavior to design; whatever `{op:"delete"}` does in Finder, it does here).
+Rename and delete are handled exactly like Finder's own — Gallery doesn't introduce new delete semantics (whatever `{op:"moveToTrash"}` does in Finder, it does here, including the `isTrashable` conditional confirmation for Windows-mounted paths).
 
 ## 7. Live updates
 
