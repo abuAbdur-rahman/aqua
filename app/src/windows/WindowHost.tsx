@@ -9,7 +9,10 @@ export function WindowHost() {
   const spaceWindows = windows.filter((w) => w.spaceId === activeSpaceId);
 
   return (
-    <div ref={ref} className="absolute inset-0">
+    // `isolate` boxes every window's store-driven z-index inside this host, so
+    // chrome overlays (Mission Control, Spotlight, menus) always stack above
+    // them no matter how high the counter climbs.
+    <div ref={ref} className="absolute inset-0 isolate z-0">
       {spaceWindows.length === 0 && (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-card border border-bg-hover bg-bg-elevated/80 px-5 py-4 text-center shadow-lg backdrop-blur">
           <p className="text-sm font-medium text-text-primary">Aqua Desktop</p>
@@ -18,8 +21,16 @@ export function WindowHost() {
           </p>
         </div>
       )}
-      {spaceWindows.map((w) => (
-        <WindowFrame key={w.id} win={w} containerRef={ref} />
+      {/* Every window stays mounted across Space switches (UI-SPEC-13 §6):
+          off-Space windows are hidden, not unmounted, so terminal sessions,
+          scroll positions, and buffers survive the switch. */}
+      {windows.map((w) => (
+        <WindowFrame
+          key={w.id}
+          win={w}
+          containerRef={ref}
+          spaceVisible={w.spaceId === activeSpaceId}
+        />
       ))}
     </div>
   );

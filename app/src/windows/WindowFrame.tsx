@@ -25,6 +25,8 @@ const GalleryPane = lazy(() =>
 type Props = {
   win: WindowRecord;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** false when the window's Space is not the active one — hidden, still mounted */
+  spaceVisible?: boolean;
 };
 
 const SNAP = 12;
@@ -43,7 +45,7 @@ function dockOrigin(appId: string): { x: number; y: number } | null {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
-export function WindowFrame({ win, containerRef }: Props) {
+export function WindowFrame({ win, containerRef, spaceVisible = true }: Props) {
   const focus = useWindowStore((s) => s.focus);
   const close = useWindowStore((s) => s.close);
   const minimize = useWindowStore((s) => s.minimize);
@@ -161,12 +163,16 @@ export function WindowFrame({ win, containerRef }: Props) {
   const trafficOpacity = win.focused ? 1 : titleHover ? 1 : 0.35;
   const trafficRestOpacity = win.focused ? 0.92 : 0.6;
 
+  // Off-Space windows hide exactly like minimized ones: kept in the DOM so app
+  // state and WebSocket sessions survive, just invisible and inert.
+  const onScreen = spaceVisible && !win.minimized;
+
   return (
     <motion.div
       role="dialog"
       aria-label={win.title}
       aria-modal="false"
-      aria-hidden={win.minimized}
+      aria-hidden={!onScreen}
       data-app-window={win.appId}
       onMouseDown={() => focus(win.id)}
       initial={reduced ? false : { opacity: 0, scale: 0.96, x: initialTranslate.x, y: initialTranslate.y }}
@@ -184,8 +190,8 @@ export function WindowFrame({ win, containerRef }: Props) {
         width: win.w,
         height: win.h,
         zIndex: win.z,
-        visibility: win.minimized ? "hidden" : "visible",
-        pointerEvents: win.minimized ? "none" : "auto",
+        visibility: onScreen ? "visible" : "hidden",
+        pointerEvents: onScreen ? "auto" : "none",
         willChange: "transform, opacity",
       }}
     >

@@ -7,6 +7,7 @@ import { useDaemonConnection } from "../lib/useDaemon";
 import { useWindowStore } from "../windows/store";
 import { useLayoutPersistence } from "../lib/useLayoutPersistence";
 import { SpotlightPane } from "../panes/SpotlightPane";
+import { CommandCenter } from "./CommandCenter";
 import { ModalHost } from "../system/ModalHost";
 import { ToastHost } from "../system/toast";
 import { Wallpaper } from "./Wallpaper";
@@ -16,6 +17,7 @@ export function Desktop() {
   const openEditor = useWindowStore((store) => store.openEditor);
   const openFinder = useWindowStore((store) => store.openFinder);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [commandCenterOpen, setCommandCenterOpen] = useState(false);
   const [missionControlOpen, setMissionControlOpen] = useState(false);
   const lastToggleRef = useRef(0);
 
@@ -76,6 +78,28 @@ export function Desktop() {
     const onOpenSpotlight = () => setSpotlightOpen(true);
     window.addEventListener("aqua:open-spotlight", onOpenSpotlight);
     return () => window.removeEventListener("aqua:open-spotlight", onOpenSpotlight);
+  }, []);
+
+  useEffect(() => {
+    // Command Center trigger: Ctrl+Shift+/, local to the WebView (UI-SPEC-14 §2
+    // — no Tauri global shortcut). Skips text fields so Monaco's block-comment
+    // binding and form input aren't hijacked, matching the Spaces handler below.
+    const onCommandKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+      if (e.code !== "Slash") return;
+      const target = e.target as HTMLElement | null;
+      const inText =
+        target != null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.closest(".monaco-editor") != null);
+      if (inText) return;
+      e.preventDefault();
+      setCommandCenterOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onCommandKey);
+    return () => window.removeEventListener("keydown", onCommandKey);
   }, []);
 
   useEffect(() => {
@@ -145,6 +169,19 @@ export function Desktop() {
       <Dock />
 
       <SpotlightPane open={spotlightOpen} onClose={() => setSpotlightOpen(false)} />
+
+      <CommandCenter
+        open={commandCenterOpen}
+        onClose={() => setCommandCenterOpen(false)}
+        onOpenMissionControl={() => {
+          setCommandCenterOpen(false);
+          setMissionControlOpen(true);
+        }}
+        onToggleSpotlight={() => {
+          setCommandCenterOpen(false);
+          setSpotlightOpen((v) => !v);
+        }}
+      />
 
       <MissionControl open={missionControlOpen} onClose={() => setMissionControlOpen(false)} />
 
