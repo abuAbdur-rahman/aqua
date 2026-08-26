@@ -6,7 +6,7 @@ use std::{
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 const DEFAULT_DB_DIR: &str = ".local/share/aqua";
 const DEFAULT_DB_FILE: &str = "state.sqlite3";
 
@@ -55,10 +55,30 @@ pub(crate) struct WallpaperRecord {
     pub(crate) added_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TrashRecord {
+    pub(crate) id: String,
+    pub(crate) original_path: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) size: i64,
+    pub(crate) deleted_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) trash_path: PathBuf,
+}
+
 #[derive(Debug)]
 pub(crate) enum StateError {
     Invalid(String),
     Storage(String),
+}
+
+impl std::fmt::Display for StateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(message) | Self::Storage(message) => formatter.write_str(message),
+        }
+    }
 }
 
 impl Store {
@@ -279,6 +299,70 @@ impl Store {
         Ok(deleted > 0)
     }
 
+    pub(crate) fn insert_trash_entry(&self, record: &TrashRecord) -> Result<(), StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        connection
+            .execute(
+                "INSERT INTO trash (id, original_path, name, kind, size, deleted_at, trash_path) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    record.id,
+                    record.original_path,
+                    record.name,
+                    record.kind,
+                    record.size,
+                    record.deleted_at.to_rfc3339(),
+                    record.trash_path.to_string_lossy(),
+                ],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    pub(crate) fn get_trash_entry(&self, id: &str) -> Result<Option<TrashRecord>, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let mut statement = connection
+            .prepare("SELECT id, original_path, name, kind, size, deleted_at, trash_path FROM trash WHERE id = ?1")
+            .map_err(storage)?;
+        let mut rows = statement.query(params![id]).map_err(storage)?;
+        match rows.next().map_err(storage)? {
+            Some(row) => Ok(Some(trash_record_from_row(row).map_err(storage)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn list_trash_entries(&self) -> Result<Vec<TrashRecord>, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let mut statement = connection
+            .prepare("SELECT id, original_path, name, kind, size, deleted_at, trash_path FROM trash ORDER BY deleted_at DESC, id")
+            .map_err(storage)?;
+        let records = statement
+            .query_map([], trash_record_from_row)
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?;
+        Ok(records)
+    }
+
+    pub(crate) fn delete_trash_entry(&self, id: &str) -> Result<bool, StateError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| StateError::Storage("state lock poisoned".into()))?;
+        let deleted = connection
+            .execute("DELETE FROM trash WHERE id = ?1", params![id])
+            .map_err(storage)?;
+        Ok(deleted > 0)
+    }
+
     pub(crate) fn get_pref(&self, key: &str) -> Result<Option<String>, StateError> {
         let connection = self
             .connection
@@ -341,7 +425,37 @@ fn migrate(connection: &Connection) -> Result<(), StateError> {
              COMMIT;",
         ).map_err(storage)?;
     }
+    if version < 3 {
+        connection
+            .execute_batch(
+                "BEGIN;
+             CREATE TABLE IF NOT EXISTS trash (
+               id TEXT PRIMARY KEY,
+               original_path TEXT NOT NULL,
+               name TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               size INTEGER NOT NULL,
+               deleted_at TEXT NOT NULL,
+               trash_path TEXT NOT NULL
+             );
+             PRAGMA user_version = 3;
+             COMMIT;",
+            )
+            .map_err(storage)?;
+    }
     Ok(())
+}
+
+fn parse_timestamp(value: &str) -> Result<chrono::DateTime<chrono::Utc>, rusqlite::Error> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|parsed| parsed.into())
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                5,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })
 }
 
 fn validate_layout(layout: &LayoutState) -> Result<(), StateError> {
@@ -380,6 +494,18 @@ fn validate_layout(layout: &LayoutState) -> Result<(), StateError> {
 
 fn storage(error: rusqlite::Error) -> StateError {
     StateError::Storage(error.to_string())
+}
+
+fn trash_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrashRecord> {
+    Ok(TrashRecord {
+        id: row.get(0)?,
+        original_path: row.get(1)?,
+        name: row.get(2)?,
+        kind: row.get(3)?,
+        size: row.get(4)?,
+        deleted_at: parse_timestamp(&row.get::<_, String>(5)?)?,
+        trash_path: PathBuf::from(row.get::<_, String>(6)?),
+    })
 }
 
 #[cfg(test)]

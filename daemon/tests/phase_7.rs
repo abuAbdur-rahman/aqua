@@ -136,7 +136,7 @@ async fn helper_rejects_symlink_swapped_before_elevated_retry() {
 
     let helper = PathBuf::from(env!("CARGO_BIN_EXE_aqua-daemon-helper"));
     let request = json!({
-        "operation": {"op": "delete", "path": "link", "elevated": true},
+        "operation": {"op": "chmod", "path": "link", "mode": "700", "elevated": true},
         "allowedRoot": root.path(),
     });
 

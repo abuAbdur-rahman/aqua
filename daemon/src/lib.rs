@@ -40,6 +40,7 @@ pub(crate) struct AppState {
     pub(crate) state: state::Store,
     pub(crate) elevation: system::Elevation,
     pub(crate) wallpaper_dir: Arc<Path>,
+    pub(crate) trash_dir: Arc<Path>,
     pub(crate) shutdown: Arc<tokio::sync::Notify>,
 }
 
@@ -142,6 +143,10 @@ fn build_router(
     };
     let shutdown_signal = Arc::new(tokio::sync::Notify::new());
     let wallpaper_dir = Arc::from(root.join(".local/share/aqua/wallpapers"));
+    let trash_dir = Arc::from(fs::trash::trash_dir_for(&root));
+    if persistent_state {
+        fs::trash::spawn_sweep(state_store.clone());
+    }
     let state = AppState {
         version: Arc::from(env!("CARGO_PKG_VERSION")),
         fs_root: Arc::from(root),
@@ -152,6 +157,7 @@ fn build_router(
         state: state_store,
         elevation,
         wallpaper_dir,
+        trash_dir,
         shutdown: Arc::clone(&shutdown_signal),
     };
     let router = Router::new()
@@ -160,6 +166,7 @@ fn build_router(
         .route("/api/fs/read", get(fs::read))
         .route("/api/fs/op", post(fs::operate))
         .route("/api/fs/write", put(fs::write))
+        .route("/api/trash/list", get(fs::trash::list))
         .route("/api/search", get(search::query))
         .route("/api/state/layout", get(state_layout).put(state_layout_put))
         .route("/api/wallpaper", get(wallpaper::state).put(wallpaper::set))

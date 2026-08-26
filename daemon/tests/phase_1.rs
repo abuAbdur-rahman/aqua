@@ -78,6 +78,12 @@ async fn list_classifies_and_sorts_entries() {
             .collect::<Vec<_>>(),
         ["alpha.txt", "bravo", "charlie-link"]
     );
+    assert!(
+        body.as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| { entry["isTrashable"].as_bool() == Some(true) })
+    );
     assert_eq!(body[0]["kind"], "file");
     assert_eq!(body[0]["size"], 5);
     assert_eq!(body[1]["kind"], "dir");
@@ -295,16 +301,17 @@ async fn mutation_union_and_write_follow_the_contract() {
     )
     .await;
     assert_eq!(moved, json!({"success": true}));
-    let (_, deleted) = request(
+    let (status, deleted) = request(
         root.path(),
         json_request(
             "POST",
             "/api/fs/op",
-            json!({"op": "delete", "path": "folder"}),
+            json!({"op": "moveToTrash", "path": "folder"}),
         ),
     )
     .await;
-    assert_eq!(deleted, json!({"success": true}));
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["success"], true);
     assert!(!root.path().join("folder").exists());
 }
 
@@ -316,16 +323,17 @@ async fn deleting_a_symlink_does_not_delete_its_target() {
     tokio::fs::write(&target, "keep").await.unwrap();
     std::os::unix::fs::symlink(&target, root.path().join("link.txt")).unwrap();
 
-    let (_, deleted) = request(
+    let (status, deleted) = request(
         root.path(),
         json_request(
             "POST",
             "/api/fs/op",
-            json!({"op": "delete", "path": "link.txt"}),
+            json!({"op": "moveToTrash", "path": "link.txt"}),
         ),
     )
     .await;
-    assert_eq!(deleted, json!({"success": true}));
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["success"], true);
     assert!(target.exists());
 }
 
@@ -402,7 +410,7 @@ async fn concurrent_path_replacement_cannot_escape_the_root() {
             json_request(
                 "POST",
                 "/api/fs/op",
-                json!({"op": "delete", "path": "inside/target"}),
+                json!({"op": "moveToTrash", "path": "inside/target"}),
             ),
         ];
         for request in requests {
@@ -459,7 +467,11 @@ async fn collisions_invalid_names_and_root_mutation_fail_safely() {
     assert_eq!(bad_name, StatusCode::BAD_REQUEST);
     let (root_delete, _) = request(
         root.path(),
-        json_request("POST", "/api/fs/op", json!({"op": "delete", "path": "."})),
+        json_request(
+            "POST",
+            "/api/fs/op",
+            json!({"op": "moveToTrash", "path": "."}),
+        ),
     )
     .await;
     assert_eq!(root_delete, StatusCode::FORBIDDEN);

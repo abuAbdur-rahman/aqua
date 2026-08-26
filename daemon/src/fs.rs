@@ -1,8 +1,7 @@
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
-    os::fd::AsFd,
-    os::unix::fs::PermissionsExt as _,
+    os::{fd::AsFd, unix::fs::PermissionsExt as _},
     path::{Path, PathBuf},
     sync::Arc,
     time::SystemTime,
@@ -16,13 +15,18 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
-use rustix::fs::{AtFlags, Mode, OFlags, fchmod, mkdirat, openat2, renameat, statat, unlinkat};
+use rustix::fs::{
+    AtFlags, Mode, OFlags, fchmod, mkdirat, openat2, readlinkat, renameat, statat, symlinkat,
+};
 use serde::{Deserialize, Serialize};
 use tokio::task;
 
 use crate::AppState;
 
 pub(crate) mod safety;
+pub(crate) mod trash;
+
+use trash::{TrashOutcome, is_windows_mount};
 
 const READ_LIMIT: usize = 1024 * 1024;
 use safety::{
@@ -44,6 +48,7 @@ pub struct FsEntry {
     size: u64,
     modified: DateTime<Utc>,
     permissions: String,
+    is_trashable: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -95,8 +100,28 @@ pub enum FsOp {
         #[serde(default)]
         elevated: bool,
     },
-    Delete {
+    Copy {
         path: String,
+        to: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    MoveToTrash {
+        path: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    RestoreFromTrash {
+        trash_id: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    PermanentDelete {
+        trash_id: String,
+        #[serde(default)]
+        elevated: bool,
+    },
+    EmptyTrash {
         #[serde(default)]
         elevated: bool,
     },
@@ -115,7 +140,11 @@ impl FsOp {
             | Self::CreateDir { elevated, .. }
             | Self::Rename { elevated, .. }
             | Self::Move { elevated, .. }
-            | Self::Delete { elevated, .. }
+            | Self::Copy { elevated, .. }
+            | Self::MoveToTrash { elevated, .. }
+            | Self::RestoreFromTrash { elevated, .. }
+            | Self::PermanentDelete { elevated, .. }
+            | Self::EmptyTrash { elevated }
             | Self::Chmod { elevated, .. } => *elevated,
         }
     }
@@ -133,6 +162,8 @@ pub struct FsWriteRequest {
 enum FsOpResponse {
     Success {
         success: bool,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "trashId")]
+        trash_id: Option<String>,
     },
     Failure {
         success: bool,
@@ -182,7 +213,11 @@ pub(crate) async fn operate(
     })
     .await
     {
-        Ok(()) => Json(FsOpResponse::Success { success: true }).into_response(),
+        Ok(outcome) => Json(FsOpResponse::Success {
+            success: true,
+            trash_id: outcome.trash_id,
+        })
+        .into_response(),
         Err(error) => (
             error.status,
             Json(FsOpResponse::Failure {
@@ -302,15 +337,20 @@ pub fn run_privileged_operation(root: &Path, operation: FsOp) -> Result<(), ApiE
         fs_root: Arc::from(root),
         fs_root_fd: Arc::new(file_from_fd(root_fd)),
     };
-    apply_operation(&context, operation)
+    apply_operation(&context, operation)?;
+    Ok(())
 }
 
-fn apply_operation_request(state: &AppState, operation: FsOp) -> Result<(), ApiError> {
+fn apply_operation_request(state: &AppState, operation: FsOp) -> Result<TrashOutcome, ApiError> {
     if operation.elevated() && !state.elevation.is_active() {
         return Err(ApiError::elevation_required("elevation is required"));
     }
+    if trash::is_trash_operation(&operation) {
+        return trash::apply_operation(state, operation);
+    }
     if operation.elevated() {
-        return crate::system::run_elevated_fs(&state.elevation, &state.fs_root, &operation);
+        return crate::system::run_elevated_fs(&state.elevation, &state.fs_root, &operation)
+            .map(|()| TrashOutcome::none());
     }
     apply_operation(&FsContext::from_state(state), operation)
 }
@@ -329,7 +369,7 @@ impl FsContext {
     }
 }
 
-fn apply_operation(context: &FsContext, operation: FsOp) -> Result<(), ApiError> {
+fn apply_operation(context: &FsContext, operation: FsOp) -> Result<TrashOutcome, ApiError> {
     match operation {
         FsOp::CreateFile { path, .. } => {
             let relative = relative_path(&context.fs_root, &path)?;
@@ -397,25 +437,45 @@ fn apply_operation(context: &FsContext, operation: FsOp) -> Result<(), ApiError>
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
             reject_collision(&destination_fd, destination_name)?;
-            renameat(&source_fd, source_name, &destination_fd, destination_name)
-                .map_err(ApiError::from_io)?;
+            match renameat(&source_fd, source_name, &destination_fd, destination_name) {
+                Ok(()) => {}
+                Err(error) if error.raw_os_error() == trash::EXDEV => {
+                    let source_display = display_path(&context.fs_root, &source);
+                    let destination_display = display_path(&context.fs_root, &destination);
+                    trash::copy_path_tree(&source_display, &destination_display)?;
+                    trash::remove_path_tree(&source_display)?;
+                }
+                Err(error) => return Err(ApiError::from_io(error)),
+            }
         }
-        FsOp::Delete { path, .. } => {
-            let relative = relative_path(&context.fs_root, &path)?;
-            reject_root(&relative)?;
-            let (parent, name) = parent_and_name(&relative)?;
-            let parent_fd = open_safe(
+        FsOp::Copy { path, to, .. } => {
+            let source = relative_path(&context.fs_root, &path)?;
+            let destination = relative_path(&context.fs_root, &to)?;
+            reject_root(&source)?;
+            reject_root(&destination)?;
+            validate_final_name(&destination)?;
+            let (source_parent, source_name) = parent_and_name(&source)?;
+            let (destination_parent, destination_name) = parent_and_name(&destination)?;
+            let source_fd = open_safe(
                 &context.fs_root_fd,
-                parent,
+                source_parent,
                 OFlags::RDONLY | OFlags::DIRECTORY,
             )?;
-            let stat =
-                statat(&parent_fd, name, AtFlags::SYMLINK_NOFOLLOW).map_err(ApiError::from_io)?;
-            if rustix::fs::FileType::from_raw_mode(stat.st_mode).is_dir() {
-                remove_directory_tree(&parent_fd, name)?;
-            } else {
-                unlinkat(&parent_fd, name, AtFlags::empty()).map_err(ApiError::from_io)?;
-            }
+            let destination_fd = open_safe(
+                &context.fs_root_fd,
+                destination_parent,
+                OFlags::RDONLY | OFlags::DIRECTORY,
+            )?;
+            let unique = auto_rename_destination(&destination_fd, destination_name)?;
+            copy_entry(&source_fd, source_name, &destination_fd, &unique)?;
+        }
+        FsOp::MoveToTrash { .. }
+        | FsOp::RestoreFromTrash { .. }
+        | FsOp::PermanentDelete { .. }
+        | FsOp::EmptyTrash { .. } => {
+            return Err(ApiError::bad_request(
+                "trash operations are not available in this context",
+            ));
         }
         FsOp::Chmod { path, mode, .. } => {
             let relative = relative_path(&context.fs_root, &path)?;
@@ -428,7 +488,7 @@ fn apply_operation(context: &FsContext, operation: FsOp) -> Result<(), ApiError>
             fchmod(&fd, Mode::from_bits_truncate(mode)).map_err(ApiError::from_io)?;
         }
     }
-    Ok(())
+    Ok(TrashOutcome::none())
 }
 
 pub(crate) async fn resolve_watch_dir(
@@ -455,28 +515,114 @@ pub(crate) async fn entry_for_watch(state: &AppState, path: PathBuf) -> Option<F
     ))
 }
 
-fn remove_directory_tree(parent: &impl AsFd, name: &Path) -> Result<(), ApiError> {
-    let directory_fd = openat2(
-        parent,
-        name,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+fn copy_entry(
+    source_parent: &impl AsFd,
+    source_name: &Path,
+    destination_parent: &impl AsFd,
+    destination_name: &Path,
+) -> Result<(), ApiError> {
+    let stat =
+        statat(source_parent, source_name, AtFlags::SYMLINK_NOFOLLOW).map_err(ApiError::from_io)?;
+    let file_type = rustix::fs::FileType::from_raw_mode(stat.st_mode);
+    if file_type.is_symlink() {
+        let target =
+            readlinkat(source_parent, source_name, Vec::new()).map_err(ApiError::from_io)?;
+        symlinkat(target, destination_parent, destination_name).map_err(ApiError::from_io)?;
+        return Ok(());
+    }
+    if file_type.is_dir() {
+        mkdirat(
+            destination_parent,
+            destination_name,
+            Mode::from_bits_truncate(stat.st_mode & 0o7777),
+        )
+        .map_err(ApiError::from_io)?;
+        let source_fd = openat2(
+            source_parent,
+            source_name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            RESOLVE_SAFE,
+        )
+        .map_err(ApiError::from_io)?;
+        let destination_fd = openat2(
+            destination_parent,
+            destination_name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            RESOLVE_SAFE,
+        )
+        .map_err(ApiError::from_io)?;
+        let source_directory = file_from_fd(source_fd);
+        let destination_directory = file_from_fd(destination_fd);
+        for entry in fs::read_dir(fd_path(&source_directory)).map_err(ApiError::from_io)? {
+            let entry = entry.map_err(ApiError::from_io)?;
+            let child_name = entry.file_name();
+            copy_entry(
+                &source_directory,
+                Path::new(&child_name),
+                &destination_directory,
+                Path::new(&child_name),
+            )?;
+        }
+        return Ok(());
+    }
+
+    let source_fd = openat2(
+        source_parent,
+        source_name,
+        OFlags::RDONLY | OFlags::CLOEXEC,
         Mode::empty(),
         RESOLVE_SAFE,
     )
     .map_err(ApiError::from_io)?;
-    let directory = file_from_fd(directory_fd);
-    for entry in fs::read_dir(fd_path(&directory)).map_err(ApiError::from_io)? {
-        let entry = entry.map_err(ApiError::from_io)?;
-        let child_name = entry.file_name();
-        let child_stat = statat(&directory, &child_name, AtFlags::SYMLINK_NOFOLLOW)
-            .map_err(ApiError::from_io)?;
-        if rustix::fs::FileType::from_raw_mode(child_stat.st_mode).is_dir() {
-            remove_directory_tree(&directory, Path::new(&child_name))?;
-        } else {
-            unlinkat(&directory, &child_name, AtFlags::empty()).map_err(ApiError::from_io)?;
+    let destination_fd = openat2(
+        destination_parent,
+        destination_name,
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC,
+        Mode::from_bits_truncate(stat.st_mode & 0o7777),
+        RESOLVE_SAFE,
+    )
+    .map_err(ApiError::from_io)?;
+    io::copy(
+        &mut file_from_fd(source_fd),
+        &mut file_from_fd(destination_fd),
+    )
+    .map_err(ApiError::from_io)?;
+    Ok(())
+}
+
+fn auto_rename_destination(parent: &impl AsFd, name: &Path) -> Result<PathBuf, ApiError> {
+    if destination_is_available(parent, name)? {
+        return Ok(name.to_path_buf());
+    }
+    let original = name.to_string_lossy().into_owned();
+    let source = Path::new(&original);
+    let (stem, extension) = match source.extension() {
+        Some(extension) => (
+            source
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| original.clone()),
+            format!(".{}", extension.to_string_lossy()),
+        ),
+        None => (original, String::new()),
+    };
+    for n in 1..u32::MAX {
+        let candidate = format!("{stem} ({n}){extension}");
+        if destination_is_available(parent, Path::new(&candidate))? {
+            return Ok(PathBuf::from(candidate));
         }
     }
-    unlinkat(parent, name, AtFlags::REMOVEDIR).map_err(ApiError::from_io)
+    Err(ApiError::conflict("no free destination name"))
+}
+
+fn destination_is_available(parent: &impl AsFd, name: &Path) -> Result<bool, ApiError> {
+    match statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(_) => Ok(false),
+        Err(error) if error == rustix::io::Errno::NOENT => Ok(true),
+        Err(error) => Err(ApiError::from_io(error)),
+    }
 }
 
 fn parent_and_name(path: &Path) -> Result<(&Path, &Path), ApiError> {
@@ -506,6 +652,7 @@ fn entry_from_metadata(name: String, path: PathBuf, metadata: fs::Metadata) -> F
         size: metadata.len(),
         modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH).into(),
         permissions: format!("{:o}", metadata.permissions().mode() & 0o7777),
+        is_trashable: !is_windows_mount(&path),
     }
 }
 
