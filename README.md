@@ -22,10 +22,73 @@ This README is the entry point: what it is, how the pieces fit together, how the
 
 ```
 [ WebView (React UI) ] ──direct fetch/WS──▶ [ Rust daemon (Axum), inside WSL ] ──▶ [ real fs / processes / shell ]
-[ Tauri Rust host ]     ──spawn + health-check──▶ [ same daemon ]
+[ Tauri Rust host ]     ──systemctl start + health-check──▶ [ same daemon ]
 ```
 
-The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 forwards that automatically, no proxying needed. The Tauri Rust host only starts the daemon and owns OS-integration bits (global hotkey, tray, frameless window). Two consumers of one API, defined once in `CONTRACT.md`.
+The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 forwards that automatically, no proxying needed. The Tauri Rust host ensures the `systemd --user` service `aqua-daemon.service` is started (`wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`) and health-checks it before showing the window. It owns only OS-integration bits (global hotkey, tray, frameless window). Two consumers of one API, defined once in `CONTRACT.md`.
+
+## Installation
+
+### Prerequisites
+
+- Windows 10/11 with WSL2 + Ubuntu (WSL `systemd=true` under `[boot]` in `/etc/wsl.conf` — stock on recent WSL, required for `systemctl --user`).
+- Node 24 + pnpm 11.6.0 (app), Rust stable + `cargo` (both sides). App CI pins these in `.github/workflows/ci.yml:71-72`.
+
+### A. From a tagged Release (recommended for users)
+
+Pushing a `v*` tag builds Windows installers on `windows-latest` and publishes them to the tag's GitHub Release (`.github/workflows/release.yml`):
+
+- **App (Windows):** download the `*.msi` (recommended) or `*.exe` (NSIS) from the Release, run it. No build step.
+- **Daemon (WSL):** still installed from source at the matching tag — the daemon is Linux and is not bundled inside the MSI. From a WSL-native checkout (never `/mnt/c`):
+
+  ```bash
+  git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
+  cd ~/projects/Self/aqua
+  git checkout v0.1.0   # pick the same tag as the app you installed
+  bash daemon/deploy/install.sh
+  ```
+
+  What it does (`daemon/deploy/README.md`): `cargo build --release`, copies `aqua-daemon` + `aqua-daemon-helper` to `~/.local/bin` (must stay together — helper path is relative to the daemon exe in `daemon/src/system.rs`), installs `~/.config/systemd/user/aqua-daemon.service`, `loginctl enable-linger $USER` + `NOPASSWD` sudoers for the helper, then `systemctl --user daemon-reload && systemctl --user enable --now aqua-daemon.service`. Re-run the same command to upgrade after `git pull`.
+
+Verify:
+
+```bash
+systemctl --user is-active aqua-daemon.service  # active
+curl http://localhost:61234/api/health          # {"status":"ok","version":"0.1.0"}
+# from Windows:
+curl.exe http://localhost:61234/api/health
+wsl.exe -d <distro> -- systemctl --user status aqua-daemon.service --no-pager
+```
+
+### B. Development build
+
+**Daemon — pick one:**
+
+- **Persistent service (daily-driver):** same as Release — `bash daemon/deploy/install.sh` from your WSL checkout. The app's `systemctl --user start` is idempotent, so a running service is a no-op. Logs: `journalctl --user -u aqua-daemon.service -f`.
+- **One-off foreground (fast iteration):** from a WSL-native path:
+
+  ```bash
+  cargo run --manifest-path daemon/Cargo.toml                 # debug
+  cargo run --manifest-path daemon/Cargo.toml --release      # release
+  ```
+
+  Binds `127.0.0.1:61234` with `HOME` as filesystem root. Stop with `Ctrl+C` or `POST /api/system/shutdown`.
+
+**App (Windows-native checkout — never `\\wsl.localhost\`):**
+
+```bash
+pnpm -C app install --frozen-lockfile
+pnpm -C app test
+pnpm -C app build          # production frontend
+cargo check --manifest-path app/src-tauri/Cargo.toml
+
+# dev loop (Vite on http://localhost:1420, Tauri polls daemon health):
+pnpm -C app tauri dev
+# production bundle (MSI + NSIS in app/src-tauri/target/release/bundle/):
+pnpm -C app tauri build
+```
+
+App CSP must allow `http://localhost:61234` + `ws://localhost:61234` (`app/src-tauri/tauri.conf.json`), daemon port is `61234` everywhere. See `CONTRIBUTING.md` for the exact `cargo fmt`/`clippy`/`cargo test` checks CI enforces.
 
 ## Locked scope
 
