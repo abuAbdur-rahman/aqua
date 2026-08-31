@@ -36,19 +36,37 @@ The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 
 
 ### A. From a tagged Release (recommended for users)
 
-Pushing a `v*` tag builds Windows installers on `windows-latest` and publishes them to the tag's GitHub Release (`.github/workflows/release.yml`):
+Pushing a `v*` tag publishes to that tag's GitHub Release via two workflows:
+
+- `release.yml` (`windows-latest`): `*.msi` + `*.exe` (Tauri)
+- `daemon-release.yml` (`ubuntu-22.04`): `aqua-daemon-<tag>-linux-x86_64-musl.tar.gz` + `.sha256` — **static musl, no Rust needed, no glibc floor** (works on WSL Ubuntu 20.04/22.04/24.04)
 
 - **App (Windows):** download the `*.msi` (recommended) or `*.exe` (NSIS) from the Release, run it. No build step.
-- **Daemon (WSL):** still installed from source at the matching tag — the daemon is Linux and is not bundled inside the MSI. From a WSL-native checkout (never `/mnt/c`):
+- **Daemon (WSL, recommended — no toolchain):** from any WSL shell (never `/mnt/c`), pick the same tag as the app:
+
+  ```bash
+  # one-liner: download musl tarball, install to ~/.local/bin + systemd user service
+  curl -fsSL https://raw.githubusercontent.com/abuAbdur-rahman/aqua/<tag>/daemon/deploy/install-from-release.sh | bash -s -- <tag>
+  # e.g. bash -s -- v0.1.0
+  # — or, with a local checkout:
+  git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
+  cd ~/projects/Self/aqua && git checkout <tag>
+  bash daemon/deploy/install-from-release.sh <tag>
+  # — or manually: curl -LO https://github.com/abuAbdur-rahman/aqua/releases/download/<tag>/aqua-daemon-<tag>-linux-x86_64-musl.tar.gz
+  #   tar xzf aqua-daemon-<tag>-linux-x86_64-musl.tar.gz -C ~/.local/bin && bash daemon/deploy/install-from-release.sh --local
+  ```
+
+  What it does (`daemon/deploy/install-from-release.sh`): downloads the musl tarball (verifies `.sha256` if present), extracts `aqua-daemon` + `aqua-daemon-helper` to `~/.local/bin` (must stay together — helper path is relative to the exe in `daemon/src/system.rs`), installs `~/.config/systemd/user/aqua-daemon.service`, `loginctl enable-linger $USER` + `NOPASSWD` sudoers for the helper, then `systemctl --user daemon-reload && systemctl --user enable --now aqua-daemon.service`.
+
+- **Daemon (WSL, from source — requires Rust):** if you have a toolchain and want to build locally:
 
   ```bash
   git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
-  cd ~/projects/Self/aqua
-  git checkout v0.1.0   # pick the same tag as the app you installed
-  bash daemon/deploy/install.sh
+  cd ~/projects/Self/aqua && git checkout <tag>
+  bash daemon/deploy/install.sh   # cargo build --release → same placement/linger/sudoers
   ```
 
-  What it does (`daemon/deploy/README.md`): `cargo build --release`, copies `aqua-daemon` + `aqua-daemon-helper` to `~/.local/bin` (must stay together — helper path is relative to the daemon exe in `daemon/src/system.rs`), installs `~/.config/systemd/user/aqua-daemon.service`, `loginctl enable-linger $USER` + `NOPASSWD` sudoers for the helper, then `systemctl --user daemon-reload && systemctl --user enable --now aqua-daemon.service`. Re-run the same command to upgrade after `git pull`.
+Re-run either install script after `git pull` / new tag to upgrade.
 
 Verify:
 

@@ -5,7 +5,28 @@ installed as a per-user `systemd` service that owns its own lifecycle, so the
 Windows Tauri host only needs to *talk* to it (and start it if it is down),
 never build or spawn it.
 
-## Install
+## Install — from Release (no Rust needed, recommended)
+
+A `v*` tag publishes a static musl tarball (`aqua-daemon-<tag>-linux-x86_64-musl.tar.gz`, `.github/workflows/daemon-release.yml` on `ubuntu-22.04`) to the same GitHub Release as the Windows MSI/NSIS. No glibc floor — works on WSL Ubuntu 20.04/22.04/24.04. From any WSL shell:
+
+```bash
+# via GitHub raw (no checkout needed):
+curl -fsSL https://raw.githubusercontent.com/abuAbdur-rahman/aqua/<tag>/daemon/deploy/install-from-release.sh | bash -s -- <tag>
+# e.g. bash -s -- v0.1.0
+
+# or with a checkout:
+git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
+cd ~/projects/Self/aqua && git checkout <tag>
+bash daemon/deploy/install-from-release.sh <tag>
+
+# or fully manual:
+curl -LO https://github.com/abuAbdur-rahman/aqua/releases/download/<tag>/aqua-daemon-<tag>-linux-x86_64-musl.tar.gz
+AQUA_DAEMON_TARBALL=./aqua-daemon-<tag>-linux-x86_64-musl.tar.gz bash daemon/deploy/install-from-release.sh --local
+```
+
+This downloads (and verifies `.sha256` if present) and installs `aqua-daemon` + `aqua-daemon-helper` to `~/.local/bin`, then does the same `systemd --user` / linger / sudoers wiring as `install.sh`.
+
+## Install — from source (requires Rust)
 
 From a WSL-native checkout (never `/mnt/c` or a `\\wsl.localhost\` mount):
 
