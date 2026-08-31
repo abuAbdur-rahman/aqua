@@ -53,9 +53,15 @@ else
   LOCAL_TARBALL="$(mktemp /tmp/aqua-daemon-XXXXXX.tar.gz)"
   echo "Downloading ${TARBALL_URL}"
   curl -fsSL -o "$LOCAL_TARBALL" "$TARBALL_URL"
-  # optional checksum if .sha256 is published alongside
+  # optional checksum if .sha256 is published alongside (compare hashes directly — mktemp name ≠ recorded filename)
   if curl -fsSL -o "${LOCAL_TARBALL}.sha256" "${TARBALL_URL}.sha256" 2>/dev/null; then
-    (cd "$(dirname "$LOCAL_TARBALL")" && sha256sum -c "$(basename "${LOCAL_TARBALL}.sha256")") && echo "Checksum OK" || echo "WARN: checksum mismatch — continuing"
+    EXPECTED="$(cut -d' ' -f1 "${LOCAL_TARBALL}.sha256")"
+    ACTUAL="$(sha256sum "$LOCAL_TARBALL" | cut -d' ' -f1)"
+    if [ "$EXPECTED" = "$ACTUAL" ]; then
+      echo "Checksum OK"
+    else
+      echo "WARN: checksum mismatch — continuing"
+    fi
   fi
 fi
 

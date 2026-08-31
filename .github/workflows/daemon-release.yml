@@ -29,7 +29,9 @@ jobs:
           targets: x86_64-unknown-linux-musl
 
       - name: Install musl toolchain
-        run: sudo apt-get update && sudo apt-get install -y musl-tools pkg-config
+        run: |
+          sudo apt-get update && sudo apt-get install -y musl-tools pkg-config
+          sudo ln -sf "$(command -v musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -53,7 +55,7 @@ jobs:
           OUT="aqua-daemon-${TAG}-linux-x86_64-musl.tar.gz"
           tar czf "../${OUT}" -C target/x86_64-unknown-linux-musl/release aqua-daemon aqua-daemon-helper
           ls -lh "../${OUT}"
-          sha256sum "../${OUT}" | tee "../${OUT}.sha256"
+          cd .. && sha256sum "${OUT}" | tee "${OUT}.sha256"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

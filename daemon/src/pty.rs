@@ -109,6 +109,7 @@ struct PtySession {
     output: mpsc::UnboundedReceiver<Vec<u8>>,
     exit: oneshot::Receiver<u32>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    pid: Option<u32>,
 }
 
 impl Drop for PtySession {
@@ -117,6 +118,20 @@ impl Drop for PtySession {
             && let Err(error) = killer.kill()
         {
             debug!(%error, "PTY child was already stopped");
+        }
+        // portable-pty's killer sends SIGHUP only to the shell PID, not its
+        // process group — a background `sleep 60 &` survives as an orphan.
+        // The contract for /ws/pty is that disconnect terminates the whole
+        // group (see phase_2::disconnect_terminates_the_shell_process), so
+        // also signal the pgid. Negative PID = process group.
+        if let Some(pid) = self.pid {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGHUP);
+                // Give SIGHUP a brief window before escalating — mirrors
+                // std::process::Child::kill's grace period.
+                std::thread::sleep(Duration::from_millis(200));
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
         }
     }
 }
@@ -302,6 +317,7 @@ fn create_session(
     drop(cwd_handle);
     drop(pair.slave);
 
+    let pid = child.process_id();
     let killer = child.clone_killer();
     let mut reader = pair
         .master
@@ -346,6 +362,7 @@ fn create_session(
         output: output_rx,
         exit: exit_rx,
         killer: Mutex::new(killer),
+        pid,
     })
 }
 

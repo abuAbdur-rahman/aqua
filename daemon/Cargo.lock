@@ -60,6 +60,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "image",
+ "libc",
  "notify",
  "portable-pty",
  "rusqlite",
