@@ -93,7 +93,12 @@ async fn fake_sudo_elevation_invokes_shared_helper() {
 #[tokio::test]
 async fn elevate_rejects_invalid_password_without_sudo() {
     let root = tempdir().expect("temporary root should exist");
-    let app = router_with_fs_root(root.path().to_path_buf());
+    let tools = tempdir().expect("temporary tool directory should exist");
+    let sudo = tools.path().join("sudo-fail");
+    fs::write(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(&sudo, fs::Permissions::from_mode(0o700)).unwrap();
+    let helper = PathBuf::from(env!("CARGO_BIN_EXE_aqua-daemon-helper"));
+    let app = router_with_fs_root_and_elevation(root.path().to_path_buf(), sudo, helper);
     let response = app
         .oneshot(
             Request::builder()
