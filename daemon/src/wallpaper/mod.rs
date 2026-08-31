@@ -95,6 +95,29 @@ impl From<StateError> for Response {
     }
 }
 
+/// Small boxed error wrapper to avoid `clippy::result_large_err`.
+/// `Response` is 128 bytes; returning `Result<_, Response>` copies that on every `Err`.
+/// Boxing makes the `Err` variant pointer-sized (8 bytes).
+pub(crate) struct WallpaperError(Box<Response>);
+
+impl From<StateError> for WallpaperError {
+    fn from(error: StateError) -> Self {
+        Self(Box::new(Response::from(error)))
+    }
+}
+
+impl From<Response> for WallpaperError {
+    fn from(response: Response) -> Self {
+        Self(Box::new(response))
+    }
+}
+
+impl IntoResponse for WallpaperError {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
+
 fn custom(record: WallpaperRecord) -> CustomWallpaper {
     CustomWallpaper {
         id: record.id,
@@ -103,12 +126,17 @@ fn custom(record: WallpaperRecord) -> CustomWallpaper {
     }
 }
 
-pub(crate) async fn state(State(state): State<AppState>) -> Result<Json<WallpaperState>, Response> {
-    let wallpapers = state.state.list_wallpapers().map_err(Response::from)?;
+pub(crate) async fn state(
+    State(state): State<AppState>,
+) -> Result<Json<WallpaperState>, WallpaperError> {
+    let wallpapers = state
+        .state
+        .list_wallpapers()
+        .map_err(WallpaperError::from)?;
     let current = state
         .state
         .get_pref(CURRENT_PREF_KEY)
-        .map_err(Response::from)?
+        .map_err(WallpaperError::from)?
         .unwrap_or_else(|| DEFAULT_CURRENT.to_owned());
     Ok(Json(WallpaperState {
         current,
@@ -119,15 +147,17 @@ pub(crate) async fn state(State(state): State<AppState>) -> Result<Json<Wallpape
 pub(crate) async fn set(
     State(state): State<AppState>,
     Json(request): Json<SetRequest>,
-) -> Result<Json<SimpleResponse>, Response> {
+) -> Result<Json<SimpleResponse>, WallpaperError> {
     let id = request.id.trim();
     if id.is_empty() || id.len() > MAX_LABEL_BYTES {
-        return Err(failure("wallpaper id must be non-empty").into_response());
+        return Err(failure("wallpaper id must be non-empty")
+            .into_response()
+            .into());
     }
     state
         .state
         .set_pref(CURRENT_PREF_KEY, id)
-        .map_err(Response::from)?;
+        .map_err(WallpaperError::from)?;
     Ok(success())
 }
 
@@ -135,13 +165,17 @@ pub(crate) async fn upload(
     State(state): State<AppState>,
     Query(query): Query<UploadQuery>,
     bytes: Bytes,
-) -> Result<Response, Response> {
+) -> Result<Response, WallpaperError> {
     let label = query.label.trim();
     if label.is_empty() || label.len() > MAX_LABEL_BYTES {
-        return Err(failure("label must be between 1 and 200 characters").into_response());
+        return Err(failure("label must be between 1 and 200 characters")
+            .into_response()
+            .into());
     }
     if bytes.is_empty() {
-        return Err(failure("upload body must contain image data").into_response());
+        return Err(failure("upload body must contain image data")
+            .into_response()
+            .into());
     }
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -154,8 +188,10 @@ pub(crate) async fn upload(
         .await
         {
             Ok(Ok(stored)) => stored,
-            Ok(Err(message)) => return Err(failure(message).into_response()),
-            Err(_) => return Err(failure("wallpaper task failed").into_response()),
+            Ok(Err(message)) => {
+                return Err(failure(message).into_response().into());
+            }
+            Err(_) => return Err(failure("wallpaper task failed").into_response().into()),
         }
     };
 
@@ -169,25 +205,33 @@ pub(crate) async fn upload(
     state
         .state
         .insert_wallpaper(&record)
-        .map_err(Response::from)?;
+        .map_err(WallpaperError::from)?;
     Ok((StatusCode::CREATED, Json(custom(record))).into_response())
 }
 
 pub(crate) async fn delete(
     State(state): State<AppState>,
     PathExtractor(id): PathExtractor<String>,
-) -> Result<Json<SimpleResponse>, Response> {
-    let record = state.state.get_wallpaper(&id).map_err(Response::from)?;
+) -> Result<Json<SimpleResponse>, WallpaperError> {
+    let record = state
+        .state
+        .get_wallpaper(&id)
+        .map_err(WallpaperError::from)?;
     let Some(record) = record else {
         // Built-in and unknown IDs are frontend-owned; nothing daemon-owned to remove.
-        return Err(failure("no custom wallpaper with that id exists").into_response());
+        return Err(failure("no custom wallpaper with that id exists")
+            .into_response()
+            .into());
     };
     let was_current = state
         .state
         .get_pref(CURRENT_PREF_KEY)
-        .map_err(Response::from)?
+        .map_err(WallpaperError::from)?
         .is_some_and(|current| current == id);
-    state.state.delete_wallpaper(&id).map_err(Response::from)?;
+    state
+        .state
+        .delete_wallpaper(&id)
+        .map_err(WallpaperError::from)?;
     let directory = state.wallpaper_dir.clone();
     tokio::task::spawn_blocking(move || {
         crate::wallpaper::thumbnail::remove_files(&record.path, &record.thumb_path);
@@ -197,7 +241,7 @@ pub(crate) async fn delete(
         state
             .state
             .set_pref(CURRENT_PREF_KEY, DEFAULT_CURRENT)
-            .map_err(Response::from)?;
+            .map_err(WallpaperError::from)?;
     }
     Ok(success())
 }
