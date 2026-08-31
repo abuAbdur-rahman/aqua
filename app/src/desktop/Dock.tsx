@@ -17,6 +17,7 @@ const DOCK_ORDER: DockItem[] = [
   { id: "finder", label: "Finder", icon: appManifest.finder.icon },
   { id: "terminal", label: "Terminal", icon: appManifest.terminal.icon },
   { id: "editor", label: "Editor", icon: appManifest.editor.icon },
+  { id: "reader", label: "Reader", icon: appManifest.reader.icon },
   { id: "gallery", label: "Gallery", icon: appManifest.gallery.icon },
   { id: "activity", label: "Activity", icon: appManifest.activity.icon },
   { id: "settings", label: "Settings", icon: appManifest.settings.icon },
@@ -77,7 +78,7 @@ function DockIcon({
       animate={launching && !reducedLaunch ? { y: [0, -10, 0] } : {}}
       transition={launching && !reducedLaunch ? { duration: 0.5, ease: [0.4, 0, 0.2, 1] } : {}}
       style={{ width: size, height: size } as unknown as React.CSSProperties}
-      className="group relative flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-secondary ring-1 ring-white/5 transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      className="group relative flex shrink-0 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
     >
       <img src={item.icon} alt="" className="h-8 w-8 shrink-0 object-contain" aria-hidden="true" />
       {focused && (
@@ -185,7 +186,7 @@ export function Dock() {
             title="Trash"
             onClick={() => openApp("trash")}
             style={{ width: trashSize, height: trashSize } as unknown as React.CSSProperties}
-            className="flex shrink-0 items-center justify-center rounded-[10px] bg-bg-overlay text-text-tertiary ring-1 ring-white/5 hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex shrink-0 items-center justify-center rounded-[10px] text-text-tertiary focus-visible:outline-2 focus-visible:outline-accent"
           >
             <img src="/icons/icon-trash.svg" alt="" className="h-8 w-8 object-contain" aria-hidden="true" />
           </motion.button>

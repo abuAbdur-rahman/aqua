@@ -1,0 +1,41 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#0E7490"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="26" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="pageShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#083344" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <rect x="40" y="40" width="432" height="432" rx="96" fill="url(#bgGrad)" filter="url(#tileShadow)"/>
+
+  <!-- open book -->
+  <g filter="url(#pageShadow)">
+    <polygon points="256,222 140,202 150,362 256,342" fill="#F8FEFF"/>
+    <polygon points="256,222 372,202 362,362 256,342" fill="#F8FEFF"/>
+  </g>
+
+  <!-- spine -->
+  <line x1="256" y1="208" x2="256" y2="352" stroke="#0E7490" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- text lines, left page -->
+  <line x1="168" y1="245" x2="232" y2="240" stroke="#0E7490" stroke-width="7" stroke-linecap="round"/>
+  <line x1="168" y1="272" x2="236" y2="267" stroke="#67E8F9" stroke-width="7" stroke-linecap="round"/>
+  <line x1="168" y1="299" x2="230" y2="295" stroke="#67E8F9" stroke-width="7" stroke-linecap="round"/>
+  <line x1="168" y1="326" x2="220" y2="322" stroke="#0E7490" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- text lines, right page (mirrored) -->
+  <line x1="344" y1="245" x2="280" y2="240" stroke="#0E7490" stroke-width="7" stroke-linecap="round"/>
+  <line x1="344" y1="272" x2="276" y2="267" stroke="#67E8F9" stroke-width="7" stroke-linecap="round"/>
+  <line x1="344" y1="299" x2="282" y2="295" stroke="#67E8F9" stroke-width="7" stroke-linecap="round"/>
+  <line x1="344" y1="326" x2="292" y2="322" stroke="#0E7490" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- bookmark ribbon -->
+  <polygon points="242,182 270,182 270,232 256,214 242,232" fill="#22D3EE"/>
+</svg>

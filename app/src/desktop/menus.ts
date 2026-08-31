@@ -1,6 +1,7 @@
 import { useWindowStore } from "../windows/store";
 import { appManifest } from "../windows/manifest";
 import { dispatchGalleryAction, useGalleryUiStore } from "../panes/gallery/galleryStore";
+import { dispatchReaderAction, useReaderUiStore } from "../panes/reader/readerStore";
 import type { AppMenuGroup } from "./menuTypes";
 
 // Builds the focused app's menu bar groups with real, working handlers.
@@ -115,6 +116,92 @@ export function buildAppMenus(appId: string, focusedId: string | null): AppMenuG
             label: "Get Info",
             enabled: gallery.hasSelection,
             onSelect: () => dispatchGalleryAction("info"),
+          },
+        ],
+      },
+      windowGroup,
+    ];
+  }
+
+  // Reader-specific groups per UI-SPEC-16 §5. Actions cross to the pane over
+  // the shared CustomEvent channel; enablement reads the mirrored UI store.
+  if (appId === "reader") {
+    const reader = useReaderUiStore.getState();
+    return [
+      {
+        label: name,
+        items: [
+          {
+            id: "quit",
+            label: `Quit ${name}`,
+            onSelect: () => appWindows.forEach((w) => store.close(w.id)),
+          },
+        ],
+      },
+      {
+        label: "File",
+        items: [
+          {
+            id: "file-print",
+            label: "Print",
+            shortcut: "Ctrl+P",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("print"),
+          },
+          {
+            id: "file-rename",
+            label: "Rename",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("rename"),
+          },
+          {
+            id: "file-duplicate",
+            label: "Duplicate",
+            shortcut: "Ctrl+D",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("duplicate"),
+          },
+          {
+            id: "file-move-to-trash",
+            label: "Move to Trash",
+            shortcut: "Ctrl+Delete",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("moveToTrash"),
+          },
+          {
+            id: "file-reveal",
+            label: "Reveal in Finder",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("revealInFinder"),
+          },
+        ],
+      },
+      {
+        label: "Edit",
+        items: [
+          {
+            id: "edit-copy-md",
+            label: "Copy as Markdown",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("copyAsMarkdown"),
+          },
+          {
+            id: "edit-copy-text",
+            label: "Copy as Plain Text",
+            shortcut: "Ctrl+C",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("copyAsPlainText"),
+          },
+        ],
+      },
+      {
+        label: "View",
+        items: [
+          {
+            id: "view-toc",
+            label: "Toggle Table of Contents",
+            enabled: true,
+            onSelect: () => dispatchReaderAction("toggleToc"),
           },
         ],
       },

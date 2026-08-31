@@ -72,7 +72,7 @@ export function Greeter({ phase, distro, healthUrl, onRetry }: GreeterProps) {
             Retry
           </button>
           <p className="font-mono text-xs text-text-tertiary">
-            wsl -d {distro} -- ./daemon · {healthUrl}
+            wsl -d {distro} -- systemctl --user start aqua-daemon.service · {healthUrl}
           </p>
         </>
       ) : (

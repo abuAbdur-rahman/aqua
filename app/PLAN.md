@@ -21,6 +21,8 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 | Activity Monitor UI | Read-only live charts (CPU/mem/disk/process list) |
 | Spotlight | Files + content search, app launcher, quick actions, **system-wide global hotkey** |
 | Gallery UI | Grid browse of images in a folder + full-screen Loupe view. No new daemon endpoints — consumes `fs/list`, `fs/read`, `fs/op`, `/ws/fs-watch` only. Full spec: `design/UI-SPEC-12-Gallery.md`. |
+| Reader UI | Read-only Markdown viewer, one document per window: GFM rendering, syntax-highlighted fences (lazy-loaded), collapsible TOC with scroll-spy, copy/print/file actions, fs-watch live reload. Shares one `MarkdownRenderer` with Finder's Quick Look. No new daemon endpoints. Full spec: `design/UI-SPEC-16-Reader.md`. |
+| Desktop widgets | **Proposal only** — two-sided change (`LayoutState.widgets[]` + daemon `GET /api/projects/list`). Spec: `design/UI-SPEC-17-Widgets.md`. Not built until the daemon side lands. |
 | Command Center | Searchable palette over every app-menu, window, Space, and system command. `Ctrl+Shift+/`, local hotkey (no Tauri global-shortcut involvement — see `design/UI-SPEC-14-CommandCenter.md` §2). |
 | Trash UI | One recoverable-delete bucket wired to `GET /api/trash/list` + the trash `FsOp`s. Full spec: `design/UI-SPEC-15-Trash.md`. Depends on Backend Phase 1.5. |
 | Import from Windows | Native file dialog → host translates picked paths to `/mnt/*` → daemon `copy` into the open Finder folder. Host returns paths only, never bytes. |
@@ -34,14 +36,14 @@ Build order: backend §10 Phase 0 → app §7 Phase 0 → then alternate per fea
 | No browser chrome | Address bar/tab strip breaks the "this is an OS" illusion. Tauri's frameless window gives full control of the chrome. |
 | Global hotkey | Spotlight needs a system-wide hotkey that fires unfocused. Browsers can't do this; Tauri's `global-shortcut` plugin can. |
 | Security exposure closed | The daemon is unauthenticated with an unrestricted shell. In a real browser, any other tab can blind-`fetch()` it (CORS blocks reading the response, not sending the request). A dedicated Tauri window only ever loads Aqua, closing that attack class. |
-| Auto-launch daemon | The Rust host shells out `wsl.exe -d Ubuntu -- ./daemon` on startup — no manual backend startup. |
+| Auto-launch daemon | The daemon runs as a persistent `systemd --user` service (`aqua-daemon.service`) inside WSL; the Rust host ensures it is started (`wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`) and health-checks `http://localhost:61234/api/health` before showing the window — no manual backend startup, no `cargo run` at launch. |
 
 ## 3. Architecture (this app's slice)
 
 Two halves inside one `.exe`, with different jobs:
 
 - **WebView (React UI)** – talks **directly** to the daemon over `fetch`/`WebSocket` at `http://localhost:61234`. No IPC proxying for data – same calls a browser tab would make.
-- **Tauri Rust host** — owns only OS-integration: daemon lifecycle (spawn, health-check, no relaunch if already running), the global Spotlight hotkey, the tray icon, frameless window config. Never touches file data, pty streams, or stats.
+- **Tauri Rust host** — owns only OS-integration: daemon lifecycle (ensure `systemd --user` service is started via `wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`, health-check, no duplicate start if already running), the global Spotlight hotkey, the tray icon, frameless window config. Never touches file data, pty streams, or stats. The host does not own the daemon process; `systemctl --user` does (`daemon/deploy/README.md`).
 
 Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – that's double-plumbing every daemon endpoint for no benefit. Let the WebView call the daemon directly; WSL2's localhost forwarding makes `http://localhost:61234` reachable from Windows automatically.
 
@@ -52,7 +54,7 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – tha
 | Crate | Purpose |
 |---|---|
 | `tauri` | Core app framework, window management |
-| `tauri-plugin-shell` | Spawn `wsl.exe -d Ubuntu -- ./daemon` as a child process |
+| `tauri-plugin-shell` | Run `wsl.exe -d <distro> -- systemctl --user {start,restart,stop} aqua-daemon.service` to manage the daemon's `systemd --user` service (host does not own a child process) |
 | `tauri-plugin-global-shortcut` | Register the Spotlight hotkey system-wide |
 | Tauri core tray feature | System tray icon (built into v2 core, no separate plugin) |
 | `reqwest` | Health-check ping to the daemon before showing the window |
@@ -61,8 +63,8 @@ Don't route file ops, pty streams, fs-watch, or sysmon through Tauri IPC – tha
 
 1. Ping `GET http://localhost:61234/api/health`.
 2. If it responds, the daemon's already running — show the window.
-3. If not, spawn `wsl.exe -d Ubuntu -- ./daemon`, poll health every ~200ms (timeout ~5s), then show the window.
-4. On app quit, **leave the daemon running** — killing it drops active pty sessions and in-memory index state. A "Quit and stop backend" tray item can be added later for an explicit full shutdown.
+3. If not, run `wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`, poll health every ~200ms (timeout ~5s, 25×200ms), then show the window. `start` is idempotent — no-op if already active.
+4. On app quit, **leave the daemon running** — the `systemd --user` service has `linger` enabled and survives Aqua exits; stopping it would drop active pty sessions and in-memory index state. Quit is `app.exit(0)` only. An explicit "Stop backend" (`POST /api/system/shutdown` then `systemctl --user stop` fallback) remains available as a separate `stop_daemon` command, never coupled to quit.
 
 ### Power actions
 
@@ -70,10 +72,11 @@ Four named Tauri commands total, three already specified, one new here:
 
 | Command | Scope | Reachable from |
 |---|---|---|
-| `quit_and_stop_daemon` | Graceful daemon stop (existing) | System Menu |
-| `restart_daemon` | Daemon process restart, distro left running (existing) | System Menu |
-| `relaunch_aqua` | App + daemon restart (existing) | System Menu |
-| `restart_wsl_distro` | **New.** `wsl --terminate <name>` + respawn — kills the specific WSL distro Aqua depends on, then re-runs the existing startup sequence above | Settings → Daemon pane only, never System Menu |
+| `quit_and_stop_daemon` | Quit Aqua only — leaves `aqua-daemon.service` running (persistent service) | System Menu |
+| `stop_daemon` | Graceful `POST /api/system/shutdown` then `systemctl --user stop` fallback — explicit Stop backend (future tray item), never coupled to quit | Tray / future explicit action |
+| `restart_daemon` | `systemctl --user restart aqua-daemon.service`, distro left running | System Menu |
+| `relaunch_aqua` | Relaunch Aqua only — daemon service stays up, health-first guard no-ops | System Menu |
+| `restart_wsl_distro` | **New.** `wsl --terminate <name>` then `systemctl --user start aqua-daemon.service` — kills the specific WSL distro Aqua depends on, then re-runs the existing startup sequence above | Settings → Daemon pane only, never System Menu |
 
 `restart_wsl_distro` is the ceiling of what Aqua will ever do to WSL. `wsl --shutdown` (the whole VM, every distro) is explicitly not implemented — see the hard rule in `app/AGENTS.md`.
 
@@ -121,8 +124,13 @@ app/frontend/src/
       GalleryGrid.tsx           # virtualized grid, IntersectionObserver lazy-load
       Loupe.tsx                 # full-screen single-image view
       useThumbnailCache.ts      # capped blob-URL cache, concurrency-limited fs/read queue
+    reader/
+      ReaderPane.tsx            # one Markdown document per window; TOC, toolbar, 4-state
+      readerStore.ts            # mirrors hasDocument/tocOpen for the menu bar
     trash/
       TrashPane.tsx             # one bucket of trashed items: list, restore, permanent delete, empty
+  components/
+    MarkdownRenderer.tsx        # shared markdown-it body + lazy Prism fences (Reader + Finder preview)
   lib/
     ws.ts                      # typed WS channel multiplexer, points at localhost:61234
     api.ts                     # typed REST client, points at localhost:61234
@@ -175,7 +183,7 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 
 | Phase | Deliverable |
 |---|---|
-| 0 — Scaffold | `npm create tauri-app@latest`; Rust host spawns/health-checks the daemon; frameless window rendering wallpaper + empty Dock + empty MenuBar per `../DESIGN.md`; confirm WebView → daemon WS round-trip |
+| 0 — Scaffold | `npm create tauri-app@latest`; Rust host ensures/health-checks the daemon's `systemd --user` service; frameless window rendering wallpaper + empty Dock + empty MenuBar per `../DESIGN.md`; confirm WebView → daemon WS round-trip |
 | 1 — Window manager core | Drag, resize, focus/z-order, minimize-to-dock, single Space, generic `WindowFrame` |
 | 2 — Finder UI | Read-only list/icon view → full CRUD → live refresh via fs-watch → Quick Look preview pane |
 | 2.5 — Import from Windows | `pick_windows_files` Tauri command + `/mnt/*` path translation (paths only, never bytes), wired to the daemon's `copy` FsOp — depends on Backend Phase 1.5 |
@@ -184,6 +192,7 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 | 5 — Editor UI | Monaco integration, open-from-Finder, save-to-disk, multi-tab |
 | 5.5 — Gallery UI | Grid + Loupe, wired to existing `fs/list`/`fs/read`/`fs/op`/`fs-watch` — no backend dependency beyond what Backend Phase 1 (Finder backend) already ships. Spec: `design/UI-SPEC-12-Gallery.md` |
 | 5.6 — Trash UI | List view wired to `GET /api/trash/list`, Restore / Delete Permanently / Empty Trash, fs-watch refresh. Spec: `design/UI-SPEC-15-Trash.md`. Depends on Backend Phase 1.5 |
+| 5.7 — Reader UI | Read-only Markdown viewer: shared `MarkdownRenderer` (markdown-it + lazy Prism), collapsible TOC with scroll-spy, copy/print/file actions, fs-watch live reload, Finder "Open in Reader". Spec: `design/UI-SPEC-16-Reader.md`. No backend dependency beyond Finder's. |
 | 6 — Spotlight | Global hotkey palette wired to `/api/search`, file search + app launch + quick actions |
 | 7 — Spaces | Multiple desktops, keyboard/gesture switching, Mission Control overview. Spec: `design/UI-SPEC-13-Spaces.md`. New `DESIGN.md` motion tokens proposed there (§7) — not yet applied, needs its own append before this phase starts. |
 | 8 — Polish | Layout persistence wired end-to-end, per-app menu bar contents, dock magnification, window animations, tray menu |
@@ -202,7 +211,7 @@ Path/purpose map below; exact request/response shapes live in `../CONTRACT.md`.
 
 ## 9. Immediate next step
 
-`npm create tauri-app@latest` for the shell + frontend scaffold. Wire the Tauri `setup` hook to spawn `wsl.exe -d Ubuntu -- ./daemon` and poll `/api/health`. Render a full-viewport wallpaper div (per `../DESIGN.md`) with a fixed Dock and MenuBar shell in a frameless window. Confirm the WebView-to-daemon WS round-trip before building any app panels — everything downstream depends on that channel.
+`npm create tauri-app@latest` for the shell + frontend scaffold. Wire the Tauri `setup` hook to ensure the `systemd --user` service is started (`wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`) and poll `/api/health` (25×200ms). Render a full-viewport wallpaper div (per `../DESIGN.md`) with a fixed Dock and MenuBar shell in a frameless window. Confirm the WebView-to-daemon WS round-trip before building any app panels — everything downstream depends on that channel.
 
 ## 10. V2 additions
 

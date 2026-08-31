@@ -277,7 +277,7 @@ export function MenuBar({ daemonState, daemonVersion, wsConnected }: MenuBarProp
                 </div>
                 {retryCount >= 3 && (
                   <p className="mt-2 text-[11px] leading-relaxed text-text-tertiary">
-                    Still failing — check whether the WSL daemon process is running (`cargo run` in `daemon/`), then retry.
+                    Still failing — check the service status (`systemctl --user status aqua-daemon.service` in WSL), then retry.
                   </p>
                 )}
               </motion.div>

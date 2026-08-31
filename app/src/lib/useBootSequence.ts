@@ -5,8 +5,9 @@ import { tauriInvoke } from "../system/tauri";
 export type BootPhase = "checking" | "starting" | "waiting" | "success" | "failed";
 
 // Mirrors the Tauri host's startup sequence (app/PLAN.md §4): one initial ping,
-// then a ~200ms poll loop with ~5s timeout. The frontend can't observe the host
-// spawning the daemon directly — a failed first ping implies it's happening.
+// then a ~200ms poll loop with ~5s timeout (25×200ms). The frontend can't
+// observe the host starting the service directly — a failed first ping implies
+// `systemctl --user start aqua-daemon.service` is happening.
 export const POLL_INTERVAL_MS = 200;
 export const POLL_TIMEOUT_MS = 5000;
 const MAX_POLLS = Math.ceil(POLL_TIMEOUT_MS / POLL_INTERVAL_MS);

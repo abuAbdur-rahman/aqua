@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { FiClipboard, FiPlus, FiX } from "react-icons/fi";
 import { createResizeScheduler, openPtySession, type PtySession } from "../lib/pty";
+import { AQUA_SHELL_FUNCTION, aquaEventName, parseAquaCommand } from "../lib/aquaCommands";
 import { useWindowStore } from "../windows/store";
 
 type TabState = "spawning" | "connected" | "exited" | "disconnected";
@@ -98,9 +99,10 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
         stopBuffering();
         return true;
       }
-      const path = encodedPath ? decodeURIComponent(encodedPath) : "";
-      if ((command === "edit" || command === "finder") && path) {
-        window.dispatchEvent(new CustomEvent(command === "edit" ? "aqua:open-editor" : "aqua:open-finder", { detail: path }));
+      const parsed = parseAquaCommand(command);
+      if (parsed) {
+        const detail = encodedPath ? decodeURIComponent(encodedPath) : "";
+        window.dispatchEvent(new CustomEvent(aquaEventName(parsed.target), { detail }));
       }
       return true;
     });
@@ -141,9 +143,13 @@ function TerminalSurface({ tab, active, fontSize, cwd, terminalsRef, onStateChan
       sessionRef.current = session;
       onStateChangeRef.current("connected");
       // stty -echo first so the function definition never echoes; the ready
-      // marker lifts the output buffer, then clear gives a clean prompt.
+      // marker lifts the output buffer, then clear gives a clean prompt. TERM
+      // is forced because the daemon's systemd environment leaves it unset
+      // (shells default to `dumb`: no colors, no alternate-screen for TUI
+      // apps like vim/less). This restores color + smcup before the shell is
+      // used, and children (zsh, vim, …) inherit it.
       session.sendInput(new TextEncoder().encode("stty -echo\n"));
-      session.sendInput(new TextEncoder().encode("function aqua(){ case \"$1\" in edit|finder) local p=\"$2\"; [[ \"$p\" != /* ]] && p=\"$PWD/${p#./}\"; printf '\\033]777;%s;%s\\007' \"$1\" \"$p\" ;; *) echo 'Usage: aqua edit <path> | aqua finder <path>' ;; esac; }; export -f aqua; clear; stty echo; printf '\\033]777;ready\\007'\n"));
+      session.sendInput(new TextEncoder().encode(`${AQUA_SHELL_FUNCTION} export TERM=xterm-256color; export COLORTERM=truecolor; clear; stty echo; printf '\\033]777;ready\\007'\n`));
       resize();
     }).catch(() => {
       if (!cancelled) onStateChangeRef.current("disconnected");

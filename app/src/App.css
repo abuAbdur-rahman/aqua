@@ -31,6 +31,24 @@
   --radius-card: 8px;
   --traffic-light-size: 12px;
   --traffic-light-gap: 8px;
+
+  /* Widget material — desktop-pinned widgets are floating glass, a different
+     surface class from in-window panels (UI-SPEC-17 / APPEND_WIDGETS_VISUAL). */
+  --widget-bg: rgba(26, 26, 31, 0.55);
+  --widget-border: rgba(255, 255, 255, 0.09);
+  --widget-radius: 22px;
+  --widget-blur: 26px;
+  --widget-shadow: 0 24px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  /* Weather semantic colors — information color for iconography only. */
+  --weather-sun: #fbbf24;
+  --weather-rain: #38bdf8;
+  --weather-cloud: #94a3b8;
+
+  /* Ecosystem brand dots (Projects widget lockfile indicators). */
+  --brand-npm: #cb3837;
+  --brand-yarn: #2c8ebb;
+  --brand-pnpm: #f9ad00;
 }
 
 @theme {
@@ -60,6 +78,18 @@
 
   --radius-window: 10px;
   --radius-card: 8px;
+  --radius-widget: 22px;
+
+  --color-widget-bg: rgba(26, 26, 31, 0.55);
+  --color-widget-border: rgba(255, 255, 255, 0.09);
+
+  --color-weather-sun: #fbbf24;
+  --color-weather-rain: #38bdf8;
+  --color-weather-cloud: #94a3b8;
+
+  --color-brand-npm: #cb3837;
+  --color-brand-yarn: #2c8ebb;
+  --color-brand-pnpm: #f9ad00;
 }
 
 *,
@@ -120,6 +150,30 @@ textarea:focus-visible,
   box-shadow: none;
 }
 
+/* ---- Widget material (desktop-pinned widgets, UI-SPEC-17) ----
+   Floating glass sitting above the wallpaper: translucent fill, a sheen
+   highlight layered over it, a 1px light border, 26px backdrop blur, and a
+   deep drop shadow that lifts the card off the desktop. Distinct from the
+   flat --bg-elevated panels used inside windows. */
+.widget-glass {
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: var(--widget-radius);
+  box-shadow: var(--widget-shadow);
+  -webkit-backdrop-filter: blur(var(--widget-blur)) saturate(150%);
+  backdrop-filter: blur(var(--widget-blur)) saturate(150%);
+  overflow: hidden;
+}
+
+.widget-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.01) 45%);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -136,4 +190,238 @@ textarea:focus-visible,
 
 .xterm .xterm-viewport::-webkit-scrollbar {
   display: none;
+}
+
+/* ---- Markdown body (shared by Reader and Finder Quick Look) ---- */
+.markdown-body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  word-wrap: break-word;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.3em 0 0.5em;
+  scroll-margin-top: 16px;
+}
+
+.markdown-body h1 { font-size: 1.55em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.1em; }
+.markdown-body h4 { font-size: 1em; }
+
+.markdown-body p {
+  margin: 0.6em 0;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body a:hover {
+  color: var(--accent-strong);
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-body li {
+  margin: 0.2em 0;
+}
+
+.markdown-body li.task-list-item {
+  list-style: none;
+  margin-left: -1.5em;
+}
+
+.markdown-body .task-list-item input[type="checkbox"] {
+  margin-right: 0.45em;
+  accent-color: var(--accent);
+}
+
+.markdown-body blockquote {
+  border-left: 2px solid var(--accent);
+  color: var(--text-secondary);
+  margin: 0.8em 0;
+  padding-left: 1em;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--bg-hover);
+  margin: 1.4em 0;
+}
+
+.markdown-body img {
+  border-radius: var(--radius-card);
+  max-width: 100%;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+  margin: 0.8em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+  width: max-content;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--bg-hover);
+  padding: 0.35em 0.7em;
+  text-align: left;
+}
+
+.markdown-body th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.markdown-body tr:nth-child(even) td {
+  background: var(--bg-elevated);
+}
+
+.markdown-body del {
+  color: var(--text-tertiary);
+}
+
+.markdown-body code {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+}
+
+.markdown-body pre {
+  background: var(--bg-base);
+  border: 1px solid var(--bg-hover);
+  border-radius: var(--radius-card);
+  margin: 0.9em 0;
+  overflow-x: auto;
+  padding: 0.9em 1em;
+  position: relative;
+}
+
+.markdown-body pre code {
+  background: none;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 0;
+}
+
+/* Per-block copy button, revealed on hover (UI-SPEC-16 §3). */
+.markdown-body .md-copy {
+  align-items: center;
+  background: var(--bg-overlay);
+  border: 1px solid var(--bg-hover);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  height: 22px;
+  justify-content: center;
+  opacity: 0;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+  width: 22px;
+}
+
+.markdown-body pre:hover .md-copy {
+  opacity: 1;
+}
+
+.markdown-body .md-copy:hover {
+  color: var(--text-primary);
+}
+
+.markdown-body .md-copy.md-copied {
+  color: var(--status-success);
+}
+
+/* Compact variant: Finder's Quick Look preview. */
+.markdown-body.markdown-compact {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.markdown-body.markdown-compact h1,
+.markdown-body.markdown-compact h2,
+.markdown-body.markdown-compact h3,
+.markdown-body.markdown-compact h4 {
+  margin: 0.8em 0 0.4em;
+}
+
+.markdown-body.markdown-compact h1 { font-size: 1.3em; }
+.markdown-body.markdown-compact h2 { font-size: 1.15em; }
+.markdown-body.markdown-compact h3 { font-size: 1.05em; }
+
+/* Prism token colors — drawn from the existing DESIGN.md palette only. */
+.markdown-body .token.comment,
+.markdown-body .token.prolog,
+.markdown-body .token.doctype,
+.markdown-body .token.cdata {
+  color: var(--text-tertiary);
+}
+
+.markdown-body .token.punctuation {
+  color: var(--text-secondary);
+}
+
+.markdown-body .token.keyword,
+.markdown-body .token.boolean,
+.markdown-body .token.operator,
+.markdown-body .token.constant {
+  color: var(--accent);
+}
+
+.markdown-body .token.string,
+.markdown-body .token.attr-value,
+.markdown-body .token.char,
+.markdown-body .token.regex {
+  color: var(--status-success);
+}
+
+.markdown-body .token.number {
+  color: var(--status-warning);
+}
+
+.markdown-body .token.function,
+.markdown-body .token.builtin {
+  color: var(--status-info);
+}
+
+.markdown-body .token.class-name,
+.markdown-body .token.property,
+.markdown-body .token.attr-name,
+.markdown-body .token.selector {
+  color: var(--accent-strong);
+}
+
+.markdown-body .token.variable,
+.markdown-body .token.parameter {
+  color: var(--text-primary);
 }

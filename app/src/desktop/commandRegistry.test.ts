@@ -15,19 +15,20 @@ function build() {
   });
 }
 
-beforeEach(() => {
-  useWindowStore.setState({
-    windows: [],
-    spaces: [{ id: 1, name: "Desktop 1" }],
-    activeSpaceId: 1,
-    nextZ: 10,
-    focusedId: null,
-    editorPathRequest: null,
-    finderPathRequest: null,
-    terminalPathRequest: null,
-    galleryPathRequest: null,
+  beforeEach(() => {
+    useWindowStore.setState({
+      windows: [],
+      spaces: [{ id: 1, name: "Desktop 1" }],
+      activeSpaceId: 1,
+      nextZ: 10,
+      focusedId: null,
+      editorPathRequest: null,
+      finderPathRequest: null,
+      terminalPathRequest: null,
+      galleryPathRequest: null,
+      readerPathRequest: null,
+    });
   });
-});
 
 describe("buildCommands", () => {
   it("orders groups app → window → space → system", () => {
@@ -51,6 +52,13 @@ describe("buildCommands", () => {
     // Gallery's own menu items land in the app category, not hardcoded in the palette
     expect(entries.some((e) => e.category === "app" && e.label === "Rename")).toBe(true);
     expect(entries.some((e) => e.category === "app" && e.label === "Move to Trash")).toBe(true);
+  });
+
+  it("a focused Reader window feeds its document actions into the app category", () => {
+    useWindowStore.getState().openApp("reader");
+    const entries = build();
+    expect(entries.some((e) => e.category === "app" && e.label === "Copy as Markdown")).toBe(true);
+    expect(entries.some((e) => e.category === "app" && e.label === "Toggle Table of Contents")).toBe(true);
   });
 
   it("does not duplicate the generic Window menu group into the app category", () => {

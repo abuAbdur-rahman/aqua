@@ -9,7 +9,7 @@ Read the root `../AGENTS.md`, `../README.md`, `PLAN.md`, `../CONTRACT.md`, `../D
 - Build from a Windows-native checkout path, never a `\\wsl.localhost\` mount.
 - The WebView talks directly to the daemon at `http://localhost:61234` using `fetch` and WebSocket.
 - Do not add Tauri IPC commands for filesystem, PTY, sysmon, search, or persistence data operations. Reserve Tauri commands for daemon lifecycle and OS integration: global shortcut, tray, and native window behavior.
-- Never hardcode `-d Ubuntu` when spawning WSL. Query `wsl -l -v` and select the configured or default distro deliberately.
+- Never hardcode `-d Ubuntu` when targeting WSL (e.g. `systemctl --user` lifecycle calls). Query `wsl -l -v` and select the configured or default distro deliberately.
 - Configure CSP to allow `http://localhost:61234` and `ws://localhost:61234`.
 - Keep custom window chrome with `decorations: false`.
 - Use `DESIGN.md` CSS variables and Tailwind tokens; build layout/states per `app/design/UI-SPEC-*` (Chrome is `01`). Do not hardcode colors or component dimensions. No new gradients beyond wallpaper, no motion beyond `DESIGN.md` table — accent-ring focus + Spotlight `180ms scale 0.96→1` are the signature motions.
@@ -30,7 +30,7 @@ Run the frontend and Tauri checks defined by the actual package manifests after 
 ## Aqua-specific rules (append-only)
 
 - Never wire `wsl --shutdown` to anything in the UI. It kills the entire WSL2 VM — every distro on the machine, not just Aqua's — and is out of scope the same way other real hardware/OS-level actions are (see `aqua-backend-plan.md` §1). If a task seems to want "restart everything WSL," that's this rule flagging it, not a gap to fill in.
-- `restart_wsl_distro` (the one distro-scoped power action Aqua does own) always resolves the distro name via `wsl -l -v` first, same as the existing spawn path — never hardcode `-d Ubuntu`.
+- `restart_wsl_distro` (the one distro-scoped power action Aqua does own) always resolves the distro name via `wsl -l -v` first, same as the daemon service lifecycle path — never hardcode `-d Ubuntu`.
 - `restart_wsl_distro` is only reachable from Settings → Daemon pane, never the System Menu. It's a heavier action than the other three power commands (it affects every process in that WSL instance, not just Aqua's daemon) and shouldn't be one accidental click away from where people quit apps.
 - `restart_wsl_distro` always routes through the existing Confirmation/Elevation modal before firing. Copy must name the actual distro (from `wsl -l -v`, not a hardcoded string) and state plainly that this affects everything running in it, not just Aqua.
 
@@ -42,3 +42,4 @@ Run the frontend and Tauri checks defined by the actual package manifests after 
 - Actual phase specs for this workstream are `app/Phases/0.md`–`8.md`; `0.md` is the source of truth for Phase 0 scaffold/lifecycle/CSP/port.
 - Daemon port is `61234` everywhere (`app/src/lib/api.ts`, `app/src-tauri/tauri.conf.json` CSP, `app/src-tauri/src/lib.rs` health poll). Do not reintroduce `8080`.
 - Windows checkout path for this clone is `D:\Self\aqua\app\` (app agent cwd). Do not edit `daemon/`; the WSL agent owns it and `daemon/AGENTS.md`.
+- Daemon lifecycle is `systemd --user` (`aqua-daemon.service`, linger, `daemon/deploy/README.md`). App host does not own a `Child` process; it ensures/controls the service via `wsl.exe -d <distro> -- systemctl --user {start,restart,stop} aqua-daemon.service` (idempotent `start`). `resolve_daemon_dir`/`AQUA_DAEMON_DIR` are diagnostics-only (`get_daemon_dir` command for Settings display), never used in start/restart hot paths. Quit (`quit_and_stop_daemon`, `CloseRequested`, tray Quit) is `app.exit(0)` only — leaves the service running. Explicit stop is the separate `stop_daemon` command (`POST /api/system/shutdown` then `systemctl --user stop` fallback, never a host-side `Child::kill`). `restart_daemon` is `systemctl --user restart` + `wait_for_health 25x200ms` (trimmed from 100x200ms; no `cargo run` recompile). `restart_wsl_distro` is `wsl --terminate <distro>` then `systemctl --user start` + `wait 25x200ms`.

@@ -31,7 +31,7 @@ Centered both axes. Aqua glyph (`96px`, same asset used in the System Menu's Abo
 ## Phase text (maps directly onto `aqua-app-plan.md` §4's numbered steps)
 
 1. **"Checking for Aqua daemon…"** — the initial `GET /api/health` ping (step 1).
-2. **"Starting WSL…"** — shown only if step 1 failed and the Tauri host is now spawning `wsl.exe -d {distro} -- ./daemon` (step 3).
+2. **"Starting WSL…"** — shown only if step 1 failed and the Tauri host is now starting the daemon's `systemd --user` service (`wsl.exe -d {distro} -- systemctl --user start aqua-daemon.service`, idempotent) (step 3).
 3. **"Waiting for daemon to respond…"** — during the ~200ms health-poll loop (step 3).
 4. On success: dots resolve into a small checkmark for ~150ms, then the whole screen cross-fades into the real desktop (reuse the window-open easing curve, `220ms cubic-bezier(0.4, 0, 0.2, 1)` — no new curve invented for this).
 
@@ -50,7 +50,7 @@ If the ~5s poll timeout (`aqua-app-plan.md` §4 step 3) is exceeded with no succ
 
                     [ Retry ]
 
-        wsl -d Ubuntu -- ./daemon · localhost:61234
+        wsl -d <distro> -- systemctl --user start aqua-daemon.service · localhost:61234
 ```
 
 Plain-language line in `--text-primary`, a single **Retry** button (`--accent`, primary) that re-runs the entire startup sequence from step 1, and one small technical line in `--text-tertiary` monospace underneath — the distro name and health-check URL actually used — because the person looking at this screen is exactly the kind of person who can fix a stuck WSL distro themselves if told what was tried, and hiding that detail behind a generic "something went wrong" would make this screen actively less useful for its own target audience.

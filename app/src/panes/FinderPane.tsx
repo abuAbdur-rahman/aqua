@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   FiArrowUp,
@@ -17,10 +17,14 @@ import {
   FiGrid,
   FiImage,
   FiList,
+  FiBookOpen,
   FiBookmark,
+  FiCopy,
+  FiScissors,
   FiRefreshCw,
   FiTrash2,
   FiTerminal,
+  FiUpload,
   FiX,
 } from "react-icons/fi";
 import {
@@ -35,13 +39,19 @@ import {
   type FsEntry,
 } from "../lib/filesystem";
 import { useFsWatch } from "../lib/useFsWatch";
+import { isMarkdownFileName } from "../lib/markdown";
+import { isReaderSupportedFile, PDF_PREVIEW_LIMIT_BYTES, readerKindForFile } from "../lib/readerFiles";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { useModalStore } from "../system/modalStore";
+import { tauriInvokeStrict } from "../system/tauri";
 import { toast } from "../system/toast";
 import { useWindowStore } from "../windows/store";
 import { useWindowsImport } from "./finder/useWindowsImport";
 
 type ViewMode = "list" | "icons";
 type LoadState = "loading" | "empty" | "populated" | "error";
+
+const PdfRenderer = lazy(() => import("../components/PdfRenderer"));
 
 const HOME_PATH = ".";
 const PINNED_KEY = "aqua.finder.pinned";
@@ -85,7 +95,7 @@ function isImage(entry: FsEntry) {
 }
 
 function isPreviewable(entry: FsEntry) {
-  return entry.kind === "file" && /\.(md|mdx|txt|json|ts|tsx|js|jsx|rs|toml|css|html|yaml|yml)$/i.test(entry.name);
+  return entry.kind === "file" && /\.(md|markdown|pdf|mdx|txt|json|ts|tsx|js|jsx|rs|toml|css|html|yaml|yml)$/i.test(entry.name);
 }
 
 function entryIcon(entry: FsEntry) {
@@ -163,12 +173,14 @@ export function FinderPane() {
   const [menu, setMenu] = useState<{ x: number; y: number; entry: FsEntry | null } | null>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const [showHidden, setShowHidden] = useState(false);
+  const [exportingPath, setExportingPath] = useState<string | null>(null);
   const [pinned, setPinned] = useState<PinnedFolder[]>(readPinned);
   const menuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const openEditor = useWindowStore((state) => state.openEditor);
   const openTerminal = useWindowStore((state) => state.openApp);
   const openGallery = useWindowStore((state) => state.openGallery);
+  const openReader = useWindowStore((state) => state.openReader);
   const finderPathRequest = useWindowStore((state) => state.finderPathRequest);
   const clearFinderPathRequest = useWindowStore((state) => state.clearFinderPathRequest);
   const requestElevate = useModalStore((s) => s.requestElevate);
@@ -339,9 +351,13 @@ export function FinderPane() {
       return;
     }
     if (!isPreviewable(entry)) return;
+    if (readerKindForFile(entry.name) === "pdf" && entry.size > PDF_PREVIEW_LIMIT_BYTES) {
+      setPreview({ entry, error: "This PDF is too large to preview (8 MB limit)." });
+      return;
+    }
     try {
       const result = await readFile(entry.path);
-      setPreview({ entry, content: result.encoding === "utf8" ? result.content : undefined, error: result.truncated ? "Preview truncated for large file" : undefined });
+      setPreview({ entry, content: result.content, encoding: result.encoding, error: result.truncated ? "Preview truncated for large file" : undefined });
     } catch (cause: unknown) {
       setPreview({ entry, error: cause instanceof Error ? cause.message : "Unable to preview file" });
     }
@@ -402,7 +418,50 @@ export function FinderPane() {
   const showMenu = (event: React.MouseEvent, entry: FsEntry | null) => {
     event.preventDefault();
     event.stopPropagation();
+    if (entry) setSelectedPath(entry.path);
     setMenu({ x: event.clientX, y: event.clientY, entry });
+  };
+
+  const exportToWindows = async (entry: FsEntry) => {
+    if (exportingPath) return;
+    setExportingPath(entry.path);
+    setMenu(null);
+    try {
+      const destination = await tauriInvokeStrict<string | null>("export_to_windows", {
+        sourcePath: entry.path,
+        fileName: entry.name,
+        isDirectory: entry.kind === "dir",
+      });
+      if (destination) toast.success(`Exported “${entry.name}” to Windows.`);
+    } catch (cause: unknown) {
+      toast.error(cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "Export to Windows failed");
+    } finally {
+      setExportingPath(null);
+    }
+  };
+
+  const copyMoveTo = (entry: FsEntry, isMove: boolean) => {
+    const verb = isMove ? "Move" : "Copy";
+    requestFilePicker({
+      mode: "selectFolder",
+      title: `${verb} “${entry.name}” to…`,
+      submitLabel: verb,
+      initialDir: parentPath(entry.path),
+      onSubmit: (target) => {
+        void tauriInvokeStrict<void>("copy_move_entry", {
+          sourcePath: entry.path,
+          destinationDir: target,
+          isMove,
+        })
+          .then(() => {
+            toast.success(`${verb === "Move" ? "Moved" : "Copied"} “${entry.name}”.`);
+            return load();
+          })
+          .catch((cause: unknown) => {
+            toast.error(cause instanceof Error ? cause.message : typeof cause === "string" ? cause : `${verb} failed`);
+          });
+      },
+    });
   };
 
   const remove = () => {
@@ -469,6 +528,15 @@ export function FinderPane() {
           });
       },
     });
+  };
+
+  const copyPath = async (entry: FsEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.path);
+      toast.success("Copied path to clipboard.");
+    } catch {
+      toast.error("Couldn't copy path");
+    }
   };
 
   const pinSelected = () => {
@@ -607,13 +675,13 @@ export function FinderPane() {
             <div className="grid grid-cols-[minmax(0,1fr)_72px_84px_60px] gap-2 border-b border-bg-hover px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
               {(["name", "size", "modified", "kind"] as const).map((key) => <button key={key} className="text-left hover:text-text-primary" onClick={() => toggleSort(key)}>{key}{sortKey === key && (sortAscending ? " ↑" : " ↓")}</button>)}
             </div>
-             {sortedEntries.map((entry) => <button key={entry.path} className={`grid w-full grid-cols-[minmax(0,1fr)_72px_84px_60px] items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)} onContextMenu={(event) => showMenu(event, entry)}>
+             {sortedEntries.map((entry) => <button key={entry.path} className={`grid w-full grid-cols-[minmax(0,1fr)_72px_84px_60px] items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={(event) => entry.kind === "dir" ? activate(entry) : showMenu(event, entry)} onContextMenu={(event) => showMenu(event, entry)}>
               <span className="flex min-w-0 items-center gap-2"><span className="shrink-0">{entryIcon(entry)}</span><span className="truncate text-text-primary">{entry.name}</span>{entry.kind === "symlink" && <span className="text-[10px] text-status-info">↗</span>}</span><span className="text-text-tertiary">{entry.kind === "dir" ? "—" : formatSize(entry.size)}</span><span className="text-text-tertiary">{formatModified(entry.modified)}</span><span className="text-text-tertiary">{entry.kind}</span>
             </button>)}
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(92px,1fr))] content-start gap-2 overflow-auto p-3" role="grid" aria-label="Files">
-             {sortedEntries.map((entry) => <button key={entry.path} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-card p-2 text-center hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={() => activate(entry)} onContextMenu={(event) => showMenu(event, entry)}><span className="text-2xl">{entryIcon(entry)}</span><span className="max-w-full truncate text-text-primary">{entry.name}</span></button>)}
+             {sortedEntries.map((entry) => <button key={entry.path} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-card p-2 text-center hover:bg-bg-hover/60 ${selectedPath === entry.path ? "bg-accent-bg" : ""}`} onClick={() => void selectEntry(entry)} onDoubleClick={(event) => entry.kind === "dir" ? activate(entry) : showMenu(event, entry)} onContextMenu={(event) => showMenu(event, entry)}><span className="text-2xl">{entryIcon(entry)}</span><span className="max-w-full truncate text-text-primary">{entry.name}</span></button>)}
           </div>
         ))}
 
@@ -623,12 +691,15 @@ export function FinderPane() {
       </section>
 
       {menu && createPortal(
-        <div ref={menuRef} className="fixed z-[100] min-w-44 rounded-card border border-bg-hover bg-bg-elevated p-1 font-sans shadow-xl" style={{ left: menuPos.left, top: menuPos.top }} onMouseDown={(event) => event.stopPropagation()}>
+        <div ref={menuRef} className="fixed z-[100] w-max min-w-36 max-w-48 rounded-card border border-bg-hover bg-bg-elevated p-1 font-sans text-[11px] shadow-xl" style={{ left: menuPos.left, top: menuPos.top }} onMouseDown={(event) => event.stopPropagation()}>
           {menu.entry?.kind === "file" && <>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openEditor(menu.entry?.path ?? ""); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Open in Editor</button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openTerminal(parentPath(menu.entry?.path ?? path)); setMenu(null); }}><FiTerminal aria-hidden="true" /> Open in Terminal</button>
             {/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(menu.entry?.name ?? "") && (
               <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openGallery(parentPath(menu.entry?.path ?? path)); setMenu(null); }}><FiImage aria-hidden="true" /> Open in Gallery</button>
+            )}
+            {isReaderSupportedFile(menu.entry?.name ?? "") && (
+              <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openReader(menu.entry?.path ?? ""); setMenu(null); }}><FiBookOpen aria-hidden="true" /> Open in Reader</button>
             )}
           </>}
           {menu.entry?.kind === "dir" && <>
@@ -637,6 +708,16 @@ export function FinderPane() {
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { pinSelected(); setMenu(null); }}><FiBookmark aria-hidden="true" /> Add to Sidebar</button>
           </>}
           {menu.entry && <>
+            {(menu.entry.kind === "file" || menu.entry.kind === "dir") && (
+              <button disabled={exportingPath !== null} className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-text-primary hover:bg-bg-hover disabled:opacity-50" onClick={() => void exportToWindows(menu.entry!)}><FiUpload aria-hidden="true" /> Export to Windows…</button>
+            )}
+            {(menu.entry.kind === "file" || menu.entry.kind === "dir") && (
+              <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { copyMoveTo(menu.entry!, false); setMenu(null); }}><FiCopy aria-hidden="true" /> Copy to…</button>
+            )}
+            {(menu.entry.kind === "file" || menu.entry.kind === "dir") && (
+              <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { copyMoveTo(menu.entry!, true); setMenu(null); }}><FiScissors aria-hidden="true" /> Move to…</button>
+            )}
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { void copyPath(menu.entry!); setMenu(null); }}><FiCopy aria-hidden="true" /> Copy File Path</button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { renameSelected(); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Rename</button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-status-danger hover:bg-bg-hover" onClick={() => { remove(); setMenu(null); }}><FiTrash2 aria-hidden="true" /> {menu.entry.isTrashable ? "Move to Trash" : "Delete Permanently"}</button>
           </>}
@@ -663,7 +744,14 @@ export function FinderPane() {
                 className="mx-auto max-h-full max-w-full object-contain"
               />
             )}
-            {!preview.error && !isImage(preview.entry) && preview.content !== undefined && <pre className="whitespace-pre-wrap break-words rounded-card bg-bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-secondary">{preview.content}</pre>}
+            {!preview.error && readerKindForFile(preview.entry.name) === "pdf" && preview.encoding === "base64" && preview.content !== undefined && (
+              <Suspense fallback={<div className="h-52 animate-pulse rounded-card bg-bg-hover/50" />}><PdfRenderer base64={preview.content} compact /></Suspense>
+            )}
+            {!preview.error && readerKindForFile(preview.entry.name) !== "pdf" && !isImage(preview.entry) && preview.content !== undefined && (isMarkdownFileName(preview.entry.name) ? (
+              <MarkdownRenderer markdown={preview.content} compact />
+            ) : (
+              <pre className="whitespace-pre-wrap break-words rounded-card bg-bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-secondary">{preview.content}</pre>
+            ))}
             {!preview.error && preview.content === undefined && <div className="flex flex-col items-center gap-2 py-8 text-center text-text-tertiary"><FiFile className="h-8 w-8" aria-hidden="true" /><span>Preview not available for this file type.</span></div>}
           </div>}
         </aside>

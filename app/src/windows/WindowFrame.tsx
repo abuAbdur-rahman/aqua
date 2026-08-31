@@ -27,6 +27,11 @@ const TrashPane = lazy(() =>
   import("../panes/trash/TrashPane").then((m) => ({ default: m.TrashPane })),
 );
 
+// Reader pulls Prism + markdown rendering; keep it out of the initial bundle.
+const ReaderPane = lazy(() =>
+  import("../panes/reader/ReaderPane").then((m) => ({ default: m.ReaderPane })),
+);
+
 type Props = {
   win: WindowRecord;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -306,7 +311,18 @@ export function WindowFrame({ win, containerRef, spaceVisible = true }: Props) {
             <TrashPane />
           </Suspense>
         )}
-        {!["finder", "terminal", "activity", "editor", "settings", "gallery", "trash"].includes(win.appId) && (
+        {win.appId === "reader" && (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-text-tertiary" role="status">
+                Loading Reader…
+              </div>
+            }
+          >
+            <ReaderPane />
+          </Suspense>
+        )}
+        {!["finder", "terminal", "activity", "editor", "settings", "gallery", "trash", "reader"].includes(win.appId) && (
           <div id={`win-content-${win.id}`} className="h-full" />
         )}
       </div>

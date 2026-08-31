@@ -1,14 +1,17 @@
 import { useCallback, useRef, useState } from "react";
-import { copyPath } from "../../lib/filesystem";
 import { useToastStore } from "../../system/toast";
 
 // Same in-flight cap as Gallery's fs/read queue — reusing the number, not
 // inventing a second concurrency policy.
 const IMPORT_CONCURRENCY = 6;
 
-async function invokeSafe<T>(cmd: string): Promise<T> {
+async function invokeSafe<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return await invoke<T>(cmd);
+  return await invoke<T>(cmd, args);
+}
+
+async function copyWindowsPath(sourcePath: string, destinationPath: string): Promise<void> {
+  await invokeSafe<void>("import_from_windows", { sourcePath, destinationPath });
 }
 
 /**
@@ -53,10 +56,13 @@ export function useWindowsImport(destination: () => string, onDone: () => void) 
           const source = queue.shift();
           if (source === undefined) return;
           try {
-            await copyPath(source, destinationRef.current());
+            await copyWindowsPath(source, destinationRef.current());
           } catch (cause: unknown) {
             failed += 1;
-            errors.set(source, cause instanceof Error ? cause.message : "Copy failed");
+            errors.set(
+              source,
+              cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "Copy failed",
+            );
           }
           completed += 1;
           showProgress();

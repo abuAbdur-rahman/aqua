@@ -35,6 +35,13 @@ export const appManifest: Record<string, AppManifestEntry> = {
     defaultSize: { w: 760, h: 520 },
     minSize: { w: 480, h: 320 },
   },
+  reader: {
+    id: "reader",
+    name: "Reader",
+    icon: "/icons/icon-reader.svg",
+    defaultSize: { w: 720, h: 520 },
+    minSize: { w: 480, h: 320 },
+  },
   activity: {
     id: "activity",
     name: "Activity Monitor",

@@ -54,14 +54,17 @@ interface WindowState {
   finderPathRequest: string | null;
   terminalPathRequest: string | null;
   galleryPathRequest: string | null;
+  readerPathRequest: string | null;
   openEditor: (path: string) => void;
   openFinder: (path: string) => void;
   openTerminal: (path: string) => void;
   openGallery: (path: string) => void;
+  openReader: (path: string) => void;
   clearEditorPathRequest: () => void;
   clearFinderPathRequest: () => void;
   clearTerminalPathRequest: () => void;
   clearGalleryPathRequest: () => void;
+  clearReaderPathRequest: () => void;
 }
 
 let idSeq = 1;
@@ -79,6 +82,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   finderPathRequest: null,
   terminalPathRequest: null,
   galleryPathRequest: null,
+  readerPathRequest: null,
 
   openApp: (appId) => {
     const manifest = appManifest[appId];
@@ -150,10 +154,17 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     get().openApp("gallery");
   },
 
+  // Reader opens a single Markdown document.
+  openReader: (path) => {
+    set({ readerPathRequest: path });
+    get().openApp("reader");
+  },
+
   clearEditorPathRequest: () => set({ editorPathRequest: null }),
   clearFinderPathRequest: () => set({ finderPathRequest: null }),
   clearTerminalPathRequest: () => set({ terminalPathRequest: null }),
   clearGalleryPathRequest: () => set({ galleryPathRequest: null }),
+  clearReaderPathRequest: () => set({ readerPathRequest: null }),
 
   close: (id) =>
     set((s) => {

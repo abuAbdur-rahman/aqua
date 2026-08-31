@@ -21,6 +21,8 @@ Read `app/AGENTS.md` and `DESIGN.md` before any of these. These specs assume bot
 | `UI-SPEC-11-Greeter.md` | Boot Greeter — pre-daemon startup/health-check screen with retry state |
 | `UI-SPEC-14-CommandCenter.md` | Command Center — searchable action palette |
 | `UI-SPEC-15-Trash.md` | Trash — recoverable delete bucket, restore/permanent-delete/empty |
+| `UI-SPEC-16-Reader.md` | Reader — read-only Markdown viewer, TOC, shared MarkdownRenderer |
+| `UI-SPEC-17-Widgets.md` | Desktop widgets — pending two-sided contract change (`LayoutState.widgets[]` + daemon `/api/projects/list`); proposal only until the daemon side lands |
 
 ## Conventions used across every spec
 

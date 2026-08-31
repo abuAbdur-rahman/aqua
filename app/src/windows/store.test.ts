@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useWindowStore } from "./store";
 
-beforeEach(() => {
-  useWindowStore.setState({
-    windows: [],
-    spaces: [{ id: 1, name: "Desktop 1" }],
-    activeSpaceId: 1,
-    nextZ: 10,
-    focusedId: null,
-    editorPathRequest: null,
-    finderPathRequest: null,
-    terminalPathRequest: null,
+  beforeEach(() => {
+    useWindowStore.setState({
+      windows: [],
+      spaces: [{ id: 1, name: "Desktop 1" }],
+      activeSpaceId: 1,
+      nextZ: 10,
+      focusedId: null,
+      editorPathRequest: null,
+      finderPathRequest: null,
+      terminalPathRequest: null,
+      readerPathRequest: null,
+    });
   });
-});
 
 describe("spaces", () => {
   it("opens new windows into the active space", () => {
