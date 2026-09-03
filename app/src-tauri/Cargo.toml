@@ -1,6 +1,6 @@
 [package]
 name = "aqua"
-version = "0.1.0"
+version = "0.1.1"
 description = "Aqua - macOS-like desktop for WSL"
 authors = ["Abdul"]
 edition = "2021"
@@ -25,4 +25,6 @@ thiserror = "1"
 encoding_rs = { version = "0.8", default-features = false }
 rfd = "0.15"
 base64 = "0.22"
+tauri-plugin-updater = "2.11.0"
+tauri-plugin-process = "2.3.1"
 

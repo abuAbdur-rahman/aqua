@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppearancePane } from "./AppearancePane";
 import { WallpaperPane } from "./WallpaperPane";
 import { DaemonPane } from "./DaemonPane";
+import { UpdatePane } from "./UpdatePane";
 import { AboutPane } from "./AboutPane";
 import { useDaemonConnection } from "../lib/useDaemon";
 
@@ -9,6 +10,7 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "wallpaper", label: "Wallpaper" },
   { id: "daemon", label: "Daemon" },
+  { id: "updates", label: "Updates" },
   { id: "about", label: "About" },
 ] as const;
 
@@ -45,6 +47,7 @@ export function SettingsPane() {
         {section === "appearance" && <AppearancePane />}
         {section === "wallpaper" && <WallpaperPane />}
         {section === "daemon" && <DaemonPane connected={connected} version={version} />}
+        {section === "updates" && <UpdatePane />}
         {section === "about" && <AboutPane />}
       </div>
     </div>
