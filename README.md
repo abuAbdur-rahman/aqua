@@ -1,96 +1,200 @@
-# Aqua — WSL Ubuntu → macOS Desktop
+# Aqua — *WSL, at home.*
 
-## Objective
+<p align="center">
+  <img src="app/src-tauri/icons/icon.png" alt="Aqua logo" width="120" />
+  <br/>
+  <em>A macOS-mannered desktop for WSL Ubuntu — Finder, Terminal, Editor, Spotlight, and a full window manager, shipped as a native Windows app.</em>
+  <br/><br/>
+  <a href="https://github.com/abuAbdur-rahman/aqua/releases"><strong>Download → Releases</strong></a>
+</p>
 
-A real, daily-driver desktop for WSL Ubuntu that looks and behaves like macOS — Finder, Terminal, Activity Monitor, a code editor, Spotlight, a full window manager with Spaces — shipped as a native Windows app called **Aqua**. Not a demo: the goal is to actually use this instead of raw terminal + Explorer for day-to-day WSL work.
+<p align="center">
+  <img src="https://img.shields.io/badge/Tauri-2.11-24C8DB?logo=tauri" alt="Tauri" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/Rust-stable-CE422B?logo=rust" alt="Rust" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind%20v4-38BDF8?logo=tailwindcss" alt="Tailwind" />
+  <img src="https://img.shields.io/badge/Axum-%20-1A1A1E?logo=rust" alt="Axum" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
+</p>
 
-Two independently-buildable pieces:
+---
 
-- **The app** (`app/src-tauri/` + `app/frontend/`) – a native Tauri window hosting the React UI. Owns everything visible.
-- **The backend** (`daemon/`) — a Rust/Axum binary running *inside* WSL Ubuntu, bound to `127.0.0.1`. Owns everything real: filesystem, processes, shell.
+## Why Aqua?
 
-Full detail lives in four companion docs:
+WSL Ubuntu is powerful, but daily driving it means juggling raw `bash`, Windows Explorer, and a browser tab — nothing feels like a real desktop. Aqua fixes that: a native Tauri window that looks and behaves like macOS, backed by a Rust daemon living *inside* WSL that owns the real filesystem, processes, and shell.
 
-- [`app/PLAN.md`](./app/PLAN.md) — Tauri host + frontend
-- [`daemon/PLAN.md`](./daemon/PLAN.md) — Rust daemon
-- [`CONTRACT.md`](./CONTRACT.md) — exact request/response shapes for every call between them
-- [`DESIGN.md`](./DESIGN.md) — dark-mode-only color tokens, chrome dimensions, motion timing
+Not a demo — the goal is to actually use this instead of Explorer + Terminal for day-to-day WSL work.
 
-This README is the entry point: what it is, how the pieces fit together, how the repository is validated, and where the current work stands.
+---
 
-## How it fits together
+## Screenshots
+
+Captured from the web build (`pnpm -C app dev` → `http://localhost:1420`) via automated browser.
+
+<table>
+<tr>
+<td width="50%">
+
+**Desktop — Widgets & Dock**
+
+<br/>
+<img src="docs/screenshots/desktop.png" alt="Aqua desktop with widgets and dock" width="100%"/>
+
+*Cool-blue dark surfaces, clock & calendar widgets, macOS-style dock*
+
+</td>
+<td width="50%">
+
+**Finder — File Browser**
+
+<br/>
+<img src="docs/screenshots/finder.png" alt="Finder file browser" width="100%"/>
+
+*Breadcrumb, sidebar, grid/list, Quick Look preview*
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Terminal — Real PTY**
+
+<br/>
+<img src="docs/screenshots/terminal.png" alt="Terminal with PTY" width="100%"/>
+
+*Full `bash`, `sudo`, xterm with fit addon, real WSL shell*
+
+</td>
+<td>
+
+**Editor — Monaco**
+
+<br/>
+<img src="docs/screenshots/editor.png" alt="Monaco editor" width="100%"/>
+
+*Multi-tab Monaco, linked to Finder & Terminal*
+
+</td>
+</tr>
+</table>
+
+> More surfaces: Activity Monitor (live CPU/mem/disk/processes), Gallery (grid + Loupe), Spotlight (`Ctrl+Shift+Space`), Trash, and Settings.
+
+---
+
+## Features
+
+### Desktop & Window Manager
+- **Spaces** — multi-desktop with Mission Control, drag-to-migrate window cards, `Ctrl+←/→` and `Ctrl+1..9` switching
+- **Dock** — magnification (`120ms ease-out`), active indicators, minimize-to-dock (`320ms`)
+- **Menu Bar & System Menu** — context-sensitive, global hotkeys
+- **Widgets** — Clock, Calendar, Weather, System Monitor, Storage, Trash preview (persisted layout)
+
+### Finder
+- Full CRUD + rename, move-to-trash (recoverable for WSL-native paths, permanent for `/mnt/*`)
+- Quick Look preview — images, PDF pagination, rendered Markdown/code
+- **Copy / Move to…** via WSL bridge (no daemon), **Import from Windows** / **Export to Windows**
+
+### Terminal & Editor
+- **Terminal** — unrestricted PTY (`POST /api/pty/spawn` + `WS /ws/pty/:sessionId`), real `bash`, `sudo`, everything
+- **Editor** — Monaco multi-tab, linked to Finder selection and Terminal `cwd`
+
+### System
+- **Spotlight** — files + app launch + calculations, debounced `GET /api/search?q=`, global `Ctrl+Shift+Space`
+- **Gallery** — grid + fullscreen Loupe, folder-scoped over existing `fs` endpoints
+- **Trash** — recoverable bucket with restore/empty
+- **Settings** — Appearance, Wallpaper, Daemon status, **Updates** (in-app updater), About
+- **In-app Updates** — signed via GitHub Releases (`tauri-plugin-updater`), `Settings → Updates`
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **App shell** | Tauri 2.11 (Rust host) |
+| **Frontend** | React 19, TypeScript 5, Vite 7, Tailwind CSS v4 (`@import "tailwindcss"` + CSS-first `@theme`) |
+| **Backend (WSL)** | Rust stable, Axum, Tokio, `systemd --user` service |
+| **Editor/Terminal** | Monaco Editor, xterm + `addon-fit` |
+| **Motion/Icons** | Framer Motion (GPU-only `transform`/`opacity`), `react-icons` |
+| **State** | Zustand (prefs, windows, widgets) |
+| **Tests** | Vitest + Testing Library (frontend), Cargo test (daemon) |
+| **Package manager** | pnpm 11.6.0 (`packageManager` field, `pnpm-lock.yaml`) |
+| **Fonts** | Inter (UI) + JetBrains Mono (terminal/editor) |
+
+---
+
+## Architecture
 
 ```
-[ WebView (React UI) ] ──direct fetch/WS──▶ [ Rust daemon (Axum), inside WSL ] ──▶ [ real fs / processes / shell ]
-[ Tauri Rust host ]     ──systemctl start + health-check──▶ [ same daemon ]
+[ WebView (React UI) ] ──direct fetch/WS──▶ [ Rust daemon (Axum) inside WSL ] ──▶ [ real fs / processes / shell ]
+[ Tauri Rust host    ] ──systemctl start + health-check──▶ [ same daemon ]
 ```
 
-The WebView talks straight to the daemon over `http://localhost:61234` – WSL2 forwards that automatically, no proxying needed. The Tauri Rust host ensures the `systemd --user` service `aqua-daemon.service` is started (`wsl.exe -d <distro> -- systemctl --user start aqua-daemon.service`) and health-checks it before showing the window. It owns only OS-integration bits (global hotkey, tray, frameless window). Two consumers of one API, defined once in `CONTRACT.md`.
+- WebView talks straight to the daemon over `http://localhost:61234` — WSL2 forwards that automatically, no proxy.
+- Tauri host ensures `aqua-daemon.service` is up (`wsl.exe -d <distro> -- systemctl --user start …`) and health-checks `GET /api/health` before showing the window. It owns only OS-integration bits (global hotkey, tray, frameless window). Wire format is `camelCase` JSON — see `CONTRACT.md`.
+- Single repo, two scopes: `app/` (Windows agent) + `daemon/` (WSL agent). Shared docs at root.
 
-## Installation
+---
 
-### Prerequisites
+## Prerequisites
 
-- Windows 10/11 with WSL2 + Ubuntu (WSL `systemd=true` under `[boot]` in `/etc/wsl.conf` — stock on recent WSL, required for `systemctl --user`).
-- Node 24 + pnpm 11.6.0 (app), Rust stable + `cargo` (both sides). App CI pins these in `.github/workflows/ci.yml:71-72`.
+- **Windows** 10/11 + WSL2 + Ubuntu (`systemd=true` under `[boot]` in `/etc/wsl.conf` — stock on recent WSL)
+- **Node** 24 + **pnpm** 11.6.0 — for the app
+- **Rust** stable + `cargo` — for both app host and daemon
+
+---
+
+## Getting Started
 
 ### A. From a tagged Release (recommended for users)
 
-Pushing a `v*` tag publishes to that tag's GitHub Release via two workflows:
+Pushing a `v*` tag publishes to that tag's GitHub Release:
 
-- `release.yml` (`windows-latest`): `*.msi` + `*.exe` (Tauri)
-- `daemon-release.yml` (`ubuntu-22.04`): `aqua-daemon-<tag>-linux-x86_64-musl.tar.gz` + `.sha256` — **static musl, no Rust needed, no glibc floor** (works on WSL Ubuntu 20.04/22.04/24.04)
+- `release.yml` (`windows-latest`) → `Aqua_*.msi` + `Aqua_*_x64-setup.exe` (Tauri, signed for in-app updater + `latest.json`)
+- `daemon-release.yml` (`ubuntu-22.04`) → `aqua-daemon-<tag>-linux-x86_64-musl.tar.gz` + `.sha256` — **static musl, no glibc floor** (works on 20.04/22.04/24.04)
 
-- **App (Windows):** download the `*.msi` (recommended) or `*.exe` (NSIS) from the Release, run it. No build step.
-- **Daemon (WSL, recommended — no toolchain):** from any WSL shell (never `/mnt/c`), pick the same tag as the app:
+**App (Windows):** download `Aqua_0.1.1_x64-setup.exe` (per-user, updater-friendly) from [Releases](https://github.com/abuAbdur-rahman/aqua/releases) and run it. Future updates: `Settings → Updates → Check for Updates`.
 
-  ```bash
-  # one-liner: download musl tarball, install to ~/.local/bin + systemd user service
-  curl -fsSL https://raw.githubusercontent.com/abuAbdur-rahman/aqua/<tag>/daemon/deploy/install-from-release.sh | bash -s -- <tag>
-  # e.g. bash -s -- v0.1.0
-  # — or, with a local checkout:
-  git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
-  cd ~/projects/Self/aqua && git checkout <tag>
-  bash daemon/deploy/install-from-release.sh <tag>
-  # — or manually: curl -LO https://github.com/abuAbdur-rahman/aqua/releases/download/<tag>/aqua-daemon-<tag>-linux-x86_64-musl.tar.gz
-  #   tar xzf aqua-daemon-<tag>-linux-x86_64-musl.tar.gz -C ~/.local/bin && bash daemon/deploy/install-from-release.sh --local
-  ```
+**Daemon (WSL):**
 
-  What it does (`daemon/deploy/install-from-release.sh`): downloads the musl tarball (verifies `.sha256` if present), extracts `aqua-daemon` + `aqua-daemon-helper` to `~/.local/bin` (must stay together — helper path is relative to the exe in `daemon/src/system.rs`), installs `~/.config/systemd/user/aqua-daemon.service`, `loginctl enable-linger $USER` + `NOPASSWD` sudoers for the helper, then `systemctl --user daemon-reload && systemctl --user enable --now aqua-daemon.service`.
+```bash
+# one-liner (no toolchain) — installs to ~/.local/bin + systemd user service
+curl -fsSL https://raw.githubusercontent.com/abuAbdur-rahman/aqua/<tag>/daemon/deploy/install-from-release.sh | bash -s -- <tag>
+# e.g. bash -s -- v0.1.1
 
-- **Daemon (WSL, from source — requires Rust):** if you have a toolchain and want to build locally:
+# — or with a local checkout:
+git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
+cd ~/projects/Self/aqua && git checkout <tag>
+bash daemon/deploy/install-from-release.sh <tag>
 
-  ```bash
-  git clone https://github.com/abuAbdur-rahman/aqua.git ~/projects/Self/aqua
-  cd ~/projects/Self/aqua && git checkout <tag>
-  bash daemon/deploy/install.sh   # cargo build --release → same placement/linger/sudoers
-  ```
+# — or build from source (requires Rust):
+bash daemon/deploy/install.sh   # cargo build --release → same placement/linger/sudoers
+```
 
-Re-run either install script after `git pull` / new tag to upgrade.
-
-Verify:
+Re-run after `git pull` / new tag to upgrade. Verify:
 
 ```bash
 systemctl --user is-active aqua-daemon.service  # active
 curl http://localhost:61234/api/health          # {"status":"ok","version":"0.1.0"}
 # from Windows:
 curl.exe http://localhost:61234/api/health
-wsl.exe -d <distro> -- systemctl --user status aqua-daemon.service --no-pager
+wsl.exe -- systemctl --user status aqua-daemon.service --no-pager
 ```
 
 ### B. Development build
 
-**Daemon — pick one:**
+**Daemon (WSL):**
 
-- **Persistent service (daily-driver):** same as Release — `bash daemon/deploy/install.sh` from your WSL checkout. The app's `systemctl --user start` is idempotent, so a running service is a no-op. Logs: `journalctl --user -u aqua-daemon.service -f`.
-- **One-off foreground (fast iteration):** from a WSL-native path:
+```bash
+# persistent service (daily-driver):
+bash daemon/deploy/install.sh   # logs: journalctl --user -u aqua-daemon.service -f
+# — or one-off foreground:
+cargo run --manifest-path daemon/Cargo.toml
+```
 
-  ```bash
-  cargo run --manifest-path daemon/Cargo.toml                 # debug
-  cargo run --manifest-path daemon/Cargo.toml --release      # release
-  ```
-
-  Binds `127.0.0.1:61234` with `HOME` as filesystem root. Stop with `Ctrl+C` or `POST /api/system/shutdown`.
+Binds `127.0.0.1:61234` with `HOME` as filesystem root.
 
 **App (Windows-native checkout — never `\\wsl.localhost\`):**
 
@@ -106,97 +210,69 @@ pnpm -C app tauri dev
 pnpm -C app tauri build
 ```
 
-App CSP must allow `http://localhost:61234` + `ws://localhost:61234` (`app/src-tauri/tauri.conf.json`), daemon port is `61234` everywhere. See `CONTRIBUTING.md` for the exact `cargo fmt`/`clippy`/`cargo test` checks CI enforces.
+CSP must allow `http://localhost:61234` + `ws://localhost:61234` (`app/src-tauri/tauri.conf.json`), daemon port is `61234` everywhere. See `CONTRIBUTING.md` for the exact `cargo fmt`/`clippy`/`cargo test` checks CI enforces.
 
-## Locked scope
+### Web preview (no Tauri)
 
-| Area | Decision |
-|---|---|
-| Delivery shell | Native Tauri app, not a browser tab |
-| App windows | Custom-built panels — no WSLg app streaming |
-| Access model | Localhost only, no auth |
-| Finder | Full CRUD + Quick Look-style preview |
-| Terminal | Full unrestricted pty — real bash, sudo, everything |
-| Window manager | Full pro-grade + Spaces |
-| Editor | Monaco-based, multi-tab |
-| Activity Monitor | Read-only live stats |
-| Spotlight | Files + app launch + quick actions + global hotkey |
-| Gallery | Grid + full-screen image browsing, folder-scoped. No new daemon surface. |
-| Command Center | `Ctrl+Shift+/` action palette — window, Space, app-menu, and system commands. No new daemon surface. |
-| Trash | Recoverable delete for WSL-native paths, permanent for Windows-mounted paths. Full spec: `app/design/UI-SPEC-15-Trash.md`. |
-| Import from Windows | Native dialog → host translates picked paths to `/mnt/*` (paths only, never bytes) → daemon `copy` into the open Finder folder. |
-| Menu bar | Functional, context-sensitive per app |
-| Theme | Dark mode only — see `DESIGN.md` |
-
-v2 stretch (not built now): real WSLg app streaming, GUI process kill/renice, multi-distro switching, wallpaper customization, Notification Center.
-
-## Repo structure
-
-One GitHub repo, cloned twice — once per OS, each built with that OS's native toolchain. Don't develop across a `\\wsl.localhost\` mount: Cargo builds are markedly slower over it, file watchers (Vite/Tauri dev reload) get unreliable, and `src-tauri` has to link Windows' WebView2 anyway, so it wants Windows-native files.
-
-```
-aqua/                                    # the repo, same on both sides
-  AGENTS.md            # shared context – human-maintained, agents read but never edit
-  app/                  # Windows agent's scope
-    PLAN.md             # Tauri host + frontend roadmap
-    src-tauri/          # Tauri Rust host
-    frontend/           # React/TS UI
-    AGENTS.md           # Windows agent instructions
-  daemon/               # WSL agent's scope
-    PLAN.md             # Rust daemon roadmap
-    src/
-    Phases/
-    AGENTS.md           # WSL agent instructions
-  README.md
-  CONTRACT.md
-  DESIGN.md
+```bash
+pnpm -C app dev   # http://localhost:1420 — same React UI without the native window
 ```
 
-```
-WSL (ext4):      ~/projects/aqua-daemon/         → build/run daemon/ from here, WSL agent's cwd
-Windows (NTFS):  C:\Users\abdul\projects\aqua-app\  → build/run app/ from here, Windows agent's cwd
-```
+Useful for screenshots and quick iteration; daemon still reachable at `localhost:61234` when WSL forwards it.
 
-Git is the sync layer between the two clones, not a shared mount — push after finishing a piece on one side, pull before starting the matching piece on the other. Maps directly onto the alternating build order in "Where to start" below. `.gitattributes` at repo root should force `* text=auto eol=lf` so files don't show as dirty purely from crossing OSes; `target/`, `node_modules/`, and `dist/` stay gitignored as usual on both sides.
+---
 
-## Repository workflow
+## Scripts
 
-The repository uses `master` as its default branch. Direct pushes are protected by the `Protect master` GitHub ruleset: pull requests, one approving review, resolved review threads, and passing `Daemon checks` and `App checks` are required. The repository owner may bypass these requirements for deliberate administrative changes. Force-pushes and branch deletion are blocked.
+| Command | Action |
+|---------|--------|
+| `pnpm -C app dev` | Vite dev server (`http://localhost:1420`) |
+| `pnpm -C app build` | Production frontend (`tsc && vite build`) |
+| `pnpm -C app test` | `vitest run` |
+| `pnpm -C app tauri dev` | Tauri dev (Vite + Rust host) |
+| `pnpm -C app tauri build` | Signed MSI + NSIS bundle |
+| `cargo check --manifest-path app/src-tauri/Cargo.toml` | Check Tauri host |
+| `cargo test --manifest-path daemon/Cargo.toml` | Daemon tests |
 
-CI is defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) and runs on pushes and pull requests:
+---
 
-- Daemon: `cargo fmt --check`, Clippy with `-D warnings`, and all Rust tests on Ubuntu.
-- App: `pnpm test`, `pnpm build`, and Tauri host `cargo check` on Windows.
-- App CI uses Node 24 and pnpm 11.6.0.
+## Design
 
-Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a change. The two workstreams remain independently buildable: app changes belong under `app/`, daemon changes belong under `daemon/`, and shared contract changes require coordination.
+Dark-mode only (`DESIGN.md`) — a cool-blue-tinted neutral ramp (`--bg-base #121212` → `--bg-overlay #2C2C32`), accent cyan `#22D3EE`, Inter + JetBrains Mono. Chrome tokens in `app/src/App.css` (`@theme` mapping), Tailwind references them as `bg-surface`, `text-primary`, etc. Motion is GPU-only: window `220ms cubic-bezier(0.4,0,0.2,1)`, dock magnify `120ms`, spotlight `180ms scale 0.96→1`.
 
-## Current status
+---
 
-Backend Phases 0–6 are complete and verified (foundation, Finder, Terminal, Activity Monitor, Spotlight search backend, SQLite layout persistence, hardening audit). Windows-native end-to-end verification has passed: health, fs create/write/list/read/rename/chmod/delete with traversal rejection, Spotlight file + calculator results over a created-then-renamed file, layout persistence round-trip without shape drift, and PTY spawn → Origin-gated WebSocket bridge → binary echo → resize → exit frame → normal close — all driven from Windows against the WSL daemon on `localhost:61234`.
+## Security
 
-On the app side, all planned phases are complete: Tauri scaffold with daemon spawn/health-check and CSP wiring, window manager core with OS chrome per `UI-SPEC-01`, Finder filesystem workspace, Terminal PTY sessions via `/ws/pty/:sessionId`, Activity Monitor streaming via `/ws/sysmon`, a Monaco-style Editor linked to Finder/Terminal, the Spotlight palette (debounced `GET /api/search?q=`, grouped results, system-wide Ctrl+Shift+Space via `tauri-plugin-global-shortcut`, verified end-to-end from the native Windows app), Spaces — multi-desktop with Mission Control, drag-to-migrate window cards, space add/remove, and Ctrl+←/→ / Ctrl+1..9 keyboard switching — plus the Gallery image browser (`UI-SPEC-12`, grid + Loupe over existing fs endpoints), System Menu and shared modals, Settings with wallpaper management, and layout persistence with debounced writes, viewport clamping, dock magnification, tray actions, and a11y/bundle audits (App Phases 8–10).
+- Secret scanning + push protection enabled (GitHub)
+- Dependabot (npm + GitHub Actions)
+- Update signing via `tauri-plugin-updater` (minisign, `TAURI_SIGNING_PRIVATE_KEY`) — private key stored as GitHub secret, never in repo
+- Branch protection on `master`: required PR, required reviews, required `Daemon checks` + `App checks`
 
-The next active work is **daily-driver usage**: run the app as the primary WSL workflow and file follow-up issues from real friction. Known open items: Gallery icon gradient drifts from `DESIGN.md` accent tokens, and the full-trash Dock icon variant (see `UI-SPEC-15` §5).
+See `SECURITY.md` (if present) for reporting.
 
-Client-supplied spec additions are registered: [`APPEND_V3.md`](./APPEND_V3.md) (menu dispatch contract + graceful shutdown), [`app/design/UI-SPEC-10-FilePicker.md`](./app/design/UI-SPEC-10-FilePicker.md), and [`app/design/UI-SPEC-11-Greeter.md`](./app/design/UI-SPEC-11-Greeter.md) — none implemented yet. [`app/design/UI-SPEC-12-Gallery.md`](./app/design/UI-SPEC-12-Gallery.md) is registered but unimplemented (App Phase 5.5); [`app/design/UI-SPEC-13-Spaces.md`](./app/design/UI-SPEC-13-Spaces.md) was written retroactively and is already covered by the shipped App Phase 7. Root `APPEND_TRASH.md` + `APPEND_WINDOWS_IMPORT.md` and [`app/design/UI-SPEC-15-Trash.md`](./app/design/UI-SPEC-15-Trash.md) are the approved Trash / Windows-import contract additions (Backend Phase 1.5, App Phases 2.5/5.6) — daemon side pending with the WSL agent.
+---
 
-## Build order
+## Roadmap
 
-Build backend capabilities before the UI that consumes them. All planned phases are complete; remaining work is end-to-end verification from the Windows-native checkout.
+- **Now (0.1.x)** — daily-driver usage, wallpaper/gallery polish, Trash Dock icon variant, updater hardening
+- **Next** — real WSLg app streaming, GUI process kill/renice, multi-distro switching, Notification Center
+- **Later** — light theme (not planned — see `DESIGN.md`), plugin surface for third-party panes
 
-- [x] Backend Phases 0–3 – foundation, Finder, Terminal, Activity Monitor
-- [x] Backend Phase 4 – Spotlight search backend
-- [x] App Phases 0–5 – scaffold, chrome, window manager, Finder, Terminal, Activity Monitor, Editor
-- [x] App Phase 6 – Spotlight UI and global hotkey
-- [x] App Phase 7 – Spaces and Mission Control
-- [x] Backend Phase 5 – Persistence
-- [x] App Phase 8 – Polish and persistence wiring
-- [x] Backend Phase 6 – Hardening audit
-- [x] App Phase 5.5 – Gallery UI (`UI-SPEC-12`)
-- [x] App Phases 9–10 – System Menu & Modals, Settings + Wallpaper
-- [x] Windows-native end-to-end verification (health, search, PTY, fs ops, persistence)
+---
 
-### Windows handoff
+## Contributing
 
-Run the app from a Windows-native checkout and verify that the Tauri host starts the daemon and that the WebView can reach `http://localhost:61234/api/search?q=`. Do not infer Windows reachability from WSL-only tests.
+PRs to `master` via feature branch. Run `pnpm -C app lint && pnpm -C app typecheck && pnpm -C app test && cargo fmt --check` before pushing. Do not commit `.env`, build artifacts, or `target/`.
+
+App changes belong under `app/`, daemon changes under `daemon/`, shared contract changes require coordination (see `CONTRACT.md`).
+
+---
+
+## License
+
+MIT — see `LICENSE` if present.
+
+---
+
+<p align="center"><em>WSL, at home.</em> — A macOS-mannered desktop for the WSL you actually live in.</p>
