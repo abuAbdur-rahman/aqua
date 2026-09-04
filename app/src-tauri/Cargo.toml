@@ -1,6 +1,6 @@
 [package]
 name = "aqua"
-version = "0.1.1"
+version = "2.0.0"
 description = "Aqua - macOS-like desktop for WSL"
 authors = ["Abdul"]
 edition = "2021"
