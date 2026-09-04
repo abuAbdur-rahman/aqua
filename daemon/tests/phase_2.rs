@@ -307,7 +307,10 @@ async fn disconnect_terminates_the_shell_process() {
     socket.close(None).await.unwrap();
 
     for process_id in [pid.trim(), child_pid.trim()] {
-        timeout(Duration::from_secs(5), async {
+        // 30s ceiling: GitHub Actions runners can take far longer than a local
+        // machine to reap the process group after the websocket drops. 5s
+        // flaked there (the group did terminate, just slowly).
+        timeout(Duration::from_secs(30), async {
             loop {
                 let status = tokio::process::Command::new("kill")
                     .args(["-0", process_id])
