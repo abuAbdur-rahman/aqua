@@ -48,8 +48,8 @@ type FsOp =
   | { op: "moveToTrash"; path: string }                   // WSL-native: moves into the internal trash dir, returns trashId.
                                                           // Windows-mounted (/mnt/*): hard-deletes immediately — same wire call either way.
   | { op: "restoreFromTrash"; trashId: string }
-  | { op: "permanentDelete"; trashId: string }            // single trashed item, forever
-  | { op: "emptyTrash" }
+  | { op: "permanentDelete"; trashId: string }            // single trashed item, forever — password-gated
+  | { op: "emptyTrash" }                                  // password-gated
   | { op: "chmod"; path: string; mode: string }; // octal string, e.g. "755"
 
 type FsOpResponse =
@@ -58,6 +58,8 @@ type FsOpResponse =
 ```
 
 Rust side: `#[serde(tag = "op", rename_all = "camelCase")] enum FsOp { ... }` — the tag field name (`op`) and variant names must match exactly, this is the highest-drift-risk shape in the whole contract.
+
+`permanentDelete` and `emptyTrash` are **password-gated by design**: they require an active elevation grant (see `POST /api/system/elevate` in `ELEVATION_RECOMMENDATION.md`), even when the trash contents are user-owned and no Linux privileges would be needed. Without a grant they fail with `{ success: false, error: "elevation is required", needsElevation: true }`. Irreversible deletion always goes through the password flow.
 
 `GET /api/fs/read?path=`
 

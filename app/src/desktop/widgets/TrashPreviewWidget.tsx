@@ -8,6 +8,7 @@ import { useFsWatch } from "../../lib/useFsWatch";
 export function TrashPreviewWidget() {
   const [entries, setEntries] = useState<TrashEntry[]>([]);
   const requestConfirm = useModalStore((s) => s.requestConfirm);
+  const requestElevate = useModalStore((s) => s.requestElevate);
   const load = useCallback(async () => {
     try {
       setEntries(await listTrash());
@@ -33,12 +34,19 @@ export function TrashPreviewWidget() {
             confirmLabel: "Empty Trash",
             danger: true,
             onConfirm: () =>
-              void emptyTrash()
-                .then(() => {
-                  toast.success("Trash emptied.");
-                  void load();
-                })
-                .catch((e) => toast.error(e instanceof Error ? e.message : "Couldn't empty Trash")),
+              // Emptying is password-gated by the daemon: authenticate first,
+              // then replay elevated. The fallback re-prompts on expiry.
+              requestElevate({
+                appName: "Trash",
+                detail: "Emptying the Trash requires your password.",
+                onSuccess: () =>
+                  void emptyTrash(true)
+                    .then(() => {
+                      toast.success("Trash emptied.");
+                      void load();
+                    })
+                    .catch((e) => toast.error(e instanceof Error ? e.message : "Couldn't empty Trash")),
+              }),
           })
         }
       >

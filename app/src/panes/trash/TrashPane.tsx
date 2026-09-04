@@ -167,12 +167,21 @@ export function TrashPane() {
       confirmLabel: "Delete",
       danger: true,
       onConfirm: () => {
-        void permanentDelete(entry.id)
-          .then(load)
-          .catch((cause: unknown) => {
-            if (handleElevation(cause, `Delete “${entry.name}” permanently`, async () => { await permanentDelete(entry.id, true); }, `Couldn't delete “${entry.name}”`)) return;
-            toast.error(cause instanceof Error ? cause.message : `Couldn't delete “${entry.name}”`);
-          });
+        // Permanent deletion is password-gated by the daemon: authenticate
+        // first, then replay the operation elevated. needsElevation can still
+        // surface if the grant expires in between — the fallback re-prompts.
+        requestElevate({
+          appName: "Trash",
+          detail: `Deleting “${entry.name}” permanently requires your password.`,
+          onSuccess: () => {
+            void permanentDelete(entry.id, true)
+              .then(load)
+              .catch((cause: unknown) => {
+                if (handleElevation(cause, `Delete “${entry.name}” permanently`, async () => { await permanentDelete(entry.id, true); }, `Couldn't delete “${entry.name}”`)) return;
+                toast.error(cause instanceof Error ? cause.message : `Couldn't delete “${entry.name}”`);
+              });
+          },
+        });
       },
     });
   };
@@ -186,12 +195,20 @@ export function TrashPane() {
       confirmLabel: "Empty Trash",
       danger: true,
       onConfirm: () => {
-        void emptyTrash()
-          .then(load)
-          .catch((cause: unknown) => {
-            if (handleElevation(cause, "Empty the Trash", async () => { await emptyTrash(true); }, "Couldn't empty Trash")) return;
-            toast.error(cause instanceof Error ? cause.message : "Couldn't empty Trash");
-          });
+        // Same password gate as single-item permanent deletion: authenticate,
+        // then replay elevated. The catch handles grant-expiry races.
+        requestElevate({
+          appName: "Trash",
+          detail: "Emptying the Trash requires your password.",
+          onSuccess: () => {
+            void emptyTrash(true)
+              .then(load)
+              .catch((cause: unknown) => {
+                if (handleElevation(cause, "Empty the Trash", async () => { await emptyTrash(true); }, "Couldn't empty Trash")) return;
+                toast.error(cause instanceof Error ? cause.message : "Couldn't empty Trash");
+              });
+          },
+        });
       },
     });
   };

@@ -342,7 +342,15 @@ pub fn run_privileged_operation(root: &Path, operation: FsOp) -> Result<(), ApiE
 }
 
 fn apply_operation_request(state: &AppState, operation: FsOp) -> Result<TrashOutcome, ApiError> {
-    if operation.elevated() && !state.elevation.is_active() {
+    // Irreversible deletion is password-gated by design: permanentDelete and
+    // emptyTrash require an active elevation grant even when the trash
+    // contents are user-owned and no Linux privileges would be needed.
+    let password_gated = operation.elevated()
+        || matches!(
+            operation,
+            FsOp::PermanentDelete { .. } | FsOp::EmptyTrash { .. }
+        );
+    if password_gated && !state.elevation.is_active() {
         return Err(ApiError::elevation_required("elevation is required"));
     }
     if trash::is_trash_operation(&operation) {

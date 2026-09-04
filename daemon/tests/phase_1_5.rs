@@ -1,6 +1,6 @@
-use std::os::unix::fs::symlink;
+use std::{fs, os::unix::fs::symlink, path::PathBuf};
 
-use aqua_daemon::router_with_fs_root;
+use aqua_daemon::{router_with_fs_root, router_with_fs_root_and_elevation};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -24,6 +24,31 @@ fn json_request(body: Value) -> Request<Body> {
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .unwrap()
+}
+
+// A router whose elevation is granted via a fake sudo binary, mirroring the
+// phase_7 fake-sudo pattern. Password-gated destructive trash operations
+// (permanentDelete, emptyTrash) need this grant to proceed. The returned
+// TempDir owns the fake sudo binary and must stay alive for the whole test —
+// dropping it deletes the binary and later elevate calls would fail.
+fn router_with_password_grant(root: &std::path::Path) -> (axum::Router, TempDir) {
+    let tools = TempDir::new().unwrap();
+    let sudo = tools.path().join("sudo-fake");
+    fs::write(
+        &sudo,
+        "#!/bin/sh\nif [ \"$1\" = \"-S\" ]; then cat >/dev/null; exit 0; fi\nexit 1\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&sudo, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let helper = PathBuf::from(env!("CARGO_BIN_EXE_aqua-daemon-helper"));
+    (
+        router_with_fs_root_and_elevation(root.to_path_buf(), sudo, helper),
+        tools,
+    )
 }
 
 #[tokio::test]
@@ -136,18 +161,59 @@ async fn trash_moves_symlink_without_touching_target() {
 }
 
 #[tokio::test]
+async fn permanent_delete_requires_password_without_elevation() {
+    let root = TempDir::new().unwrap();
+    tokio::fs::write(root.path().join("guarded.txt"), "guarded")
+        .await
+        .unwrap();
+    let router = router_with_fs_root(root.path().to_path_buf());
+    let (_, moved) = request(
+        router.clone(),
+        json_request(json!({"op":"moveToTrash","path":"guarded.txt"})),
+    )
+    .await;
+    let id = moved["trashId"].as_str().unwrap();
+
+    // No elevation grant: irreversible deletion must be refused even though
+    // the trash contents are user-owned.
+    let (status, body) = request(
+        router.clone(),
+        json_request(json!({"op":"permanentDelete","trashId":id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        body,
+        json!({"success": false, "error": "elevation is required", "needsElevation": true})
+    );
+}
+
+#[tokio::test]
 async fn permanent_delete_removes_trash_entry() {
     let root = TempDir::new().unwrap();
     tokio::fs::write(root.path().join("remove.txt"), "gone")
         .await
         .unwrap();
-    let router = router_with_fs_root(root.path().to_path_buf());
+    let (router, _tools) = router_with_password_grant(root.path());
     let (_, moved) = request(
         router.clone(),
         json_request(json!({"op":"moveToTrash","path":"remove.txt"})),
     )
     .await;
     let id = moved["trashId"].as_str().unwrap();
+
+    let (status, _) = request(
+        router.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/system/elevate")
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"password": "test-password"}).to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
     let (status, body) = request(
         router.clone(),
         json_request(json!({"op":"permanentDelete","trashId":id})),
@@ -213,7 +279,7 @@ async fn empty_trash_removes_every_entry() {
     tokio::fs::write(root.path().join("second.txt"), "second")
         .await
         .unwrap();
-    let router = router_with_fs_root(root.path().to_path_buf());
+    let (router, _tools) = router_with_password_grant(root.path());
 
     for path in ["first.txt", "second.txt"] {
         let (status, _) = request(
@@ -223,6 +289,26 @@ async fn empty_trash_removes_every_entry() {
         .await;
         assert_eq!(status, StatusCode::OK);
     }
+
+    // Emptying is password-gated too: without a grant it must be refused.
+    let (status, body) = request(router.clone(), json_request(json!({"op":"emptyTrash"}))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        body,
+        json!({"success": false, "error": "elevation is required", "needsElevation": true})
+    );
+
+    let (status, _) = request(
+        router.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/system/elevate")
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"password": "test-password"}).to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     let (status, body) = request(router.clone(), json_request(json!({"op":"emptyTrash"}))).await;
     assert_eq!(status, StatusCode::OK);
