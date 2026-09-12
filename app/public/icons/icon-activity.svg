@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img">
+<title>Aqua — activity icon</title>
+<defs>
+  <linearGradient id="g-activity" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#12572B"/>
+    <stop offset="100%" stop-color="#32D74B"/>
+  </linearGradient>
+  <linearGradient id="gloss-activity" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.16"/>
+    <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    <stop offset="100%" stop-color="#000000" stop-opacity="0.10"/>
+  </linearGradient>
+  <filter id="shadow-activity" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.38"/>
+  </filter>
+  <filter id="glow-activity" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur stdDeviation="10" result="blur"/>
+    <feMerge>
+      <feMergeNode in="blur"/>
+      <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+  </filter>
+</defs>
+
+<g filter="url(#shadow-activity)">
+  <rect x="26" y="26" width="460" height="460" rx="100" fill="url(#g-activity)"/>
+  <rect x="26" y="26" width="460" height="460" rx="100" fill="url(#gloss-activity)"/>
+  <rect x="26.5" y="26.5" width="459" height="459" rx="99.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+</g>
+
+<g filter="url(#glow-activity)">
+  <path d="M116 266 L192 266 L222 190 L256 342 L288 214 L320 266 L396 266"
+        fill="none" stroke="#FFFFFF" stroke-width="22"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>

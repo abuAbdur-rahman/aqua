@@ -1,0 +1,225 @@
+import { useWindowStore } from "../windows/store";
+import { appManifest } from "../windows/manifest";
+import { dispatchGalleryAction, useGalleryUiStore } from "../panes/gallery/galleryStore";
+import { dispatchReaderAction, useReaderUiStore } from "../panes/reader/readerStore";
+import type { AppMenuGroup } from "./menuTypes";
+
+// Builds the focused app's menu bar groups with real, working handlers.
+// Menus are derived per focused window instance (not a shared static
+// definition) so actions bind to the live window/store state.
+export function buildAppMenus(appId: string, focusedId: string | null): AppMenuGroup[] {
+  const store = useWindowStore.getState();
+  const manifest = appManifest[appId];
+  if (!manifest) return [];
+
+  const name = manifest.name;
+  const appWindows = store.windows.filter((w) => w.appId === appId);
+  const minimizedOfApp = appWindows.filter((w) => w.minimized);
+
+  const windowGroup: AppMenuGroup = {
+    label: "Window",
+    items: [
+      {
+        id: "minimize",
+        label: "Minimize",
+        enabled: focusedId != null,
+        onSelect: () => {
+          if (focusedId) store.minimize(focusedId);
+        },
+      },
+      {
+        id: "close",
+        label: "Close Window",
+        enabled: focusedId != null,
+        onSelect: () => {
+          if (focusedId) store.close(focusedId);
+        },
+      },
+      {
+        id: "show-all",
+        label: "Show All Windows",
+        enabled: minimizedOfApp.length > 0,
+        separatorAfter: true,
+        onSelect: () => minimizedOfApp.forEach((w) => store.restore(w.id)),
+      },
+    ],
+  };
+
+  // Gallery-specific groups per UI-SPEC-12 §8. Actions cross to the pane over
+  // the shared CustomEvent channel; size/sort read the mirrored UI store.
+  if (appId === "gallery") {
+    const gallery = useGalleryUiStore.getState();
+    return [
+      {
+        label: name,
+        items: [
+          {
+            id: "about-gallery",
+            label: "About Gallery",
+            separatorAfter: true,
+            onSelect: () => {}, // toast-free no-op until an About pane exists
+          },
+          {
+            id: "quit",
+            label: `Quit ${name}`,
+            onSelect: () => appWindows.forEach((w) => store.close(w.id)),
+          },
+        ],
+      },
+      {
+        label: "View",
+        items: (["s", "m", "l"] as const).map((size) => ({
+          id: `thumb-${size}`,
+          label: `${size.toUpperCase()} Thumbnails`,
+          enabled: gallery.thumbSize !== size,
+          onSelect: () => gallery.setThumbSize(size),
+        })),
+      },
+      {
+        label: "Sort By",
+        items: (
+          [
+            ["name", "Name"],
+            ["modified", "Date Modified"],
+            ["size", "Size"],
+          ] as const
+        ).map(([key, label]) => ({
+          id: `sort-${key}`,
+          label,
+          enabled: gallery.sortBy !== key,
+          onSelect: () => gallery.setSort(key, true),
+        })),
+      },
+      {
+        label: "Image",
+        items: [
+          {
+            id: "image-rename",
+            label: "Rename",
+            enabled: gallery.hasSelection,
+            onSelect: () => dispatchGalleryAction("rename"),
+          },
+          {
+            id: "image-move-to-trash",
+            label: "Move to Trash",
+            enabled: gallery.hasSelection,
+            onSelect: () => dispatchGalleryAction("moveToTrash"),
+          },
+          {
+            id: "image-reveal",
+            label: "Reveal in Finder",
+            enabled: gallery.hasSelection,
+            onSelect: () => dispatchGalleryAction("reveal"),
+          },
+          {
+            id: "image-info",
+            label: "Get Info",
+            enabled: gallery.hasSelection,
+            onSelect: () => dispatchGalleryAction("info"),
+          },
+        ],
+      },
+      windowGroup,
+    ];
+  }
+
+  // Reader-specific groups per UI-SPEC-16 §5. Actions cross to the pane over
+  // the shared CustomEvent channel; enablement reads the mirrored UI store.
+  if (appId === "reader") {
+    const reader = useReaderUiStore.getState();
+    return [
+      {
+        label: name,
+        items: [
+          {
+            id: "quit",
+            label: `Quit ${name}`,
+            onSelect: () => appWindows.forEach((w) => store.close(w.id)),
+          },
+        ],
+      },
+      {
+        label: "File",
+        items: [
+          {
+            id: "file-print",
+            label: "Print",
+            shortcut: "Ctrl+P",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("print"),
+          },
+          {
+            id: "file-rename",
+            label: "Rename",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("rename"),
+          },
+          {
+            id: "file-duplicate",
+            label: "Duplicate",
+            shortcut: "Ctrl+D",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("duplicate"),
+          },
+          {
+            id: "file-move-to-trash",
+            label: "Move to Trash",
+            shortcut: "Ctrl+Delete",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("moveToTrash"),
+          },
+          {
+            id: "file-reveal",
+            label: "Reveal in Finder",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("revealInFinder"),
+          },
+        ],
+      },
+      {
+        label: "Edit",
+        items: [
+          {
+            id: "edit-copy-md",
+            label: "Copy as Markdown",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("copyAsMarkdown"),
+          },
+          {
+            id: "edit-copy-text",
+            label: "Copy as Plain Text",
+            shortcut: "Ctrl+C",
+            enabled: reader.hasDocument,
+            onSelect: () => dispatchReaderAction("copyAsPlainText"),
+          },
+        ],
+      },
+      {
+        label: "View",
+        items: [
+          {
+            id: "view-toc",
+            label: "Toggle Table of Contents",
+            enabled: true,
+            onSelect: () => dispatchReaderAction("toggleToc"),
+          },
+        ],
+      },
+      windowGroup,
+    ];
+  }
+
+  return [
+    {
+      label: name,
+      items: [
+        {
+          id: "quit",
+          label: `Quit ${name}`,
+          onSelect: () => appWindows.forEach((w) => store.close(w.id)),
+        },
+      ],
+    },
+    windowGroup,
+  ];
+}

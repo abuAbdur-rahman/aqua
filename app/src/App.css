@@ -1,0 +1,427 @@
+@import "tailwindcss";
+
+:root {
+  --bg-base: #121212;
+  --bg-surface: #1a1a1e;
+  --bg-elevated: #232328;
+  --bg-overlay: #2c2c32;
+  --bg-hover: #34343b;
+
+  --text-primary: #f2f2f5;
+  --text-secondary: #a8a8b3;
+  --text-tertiary: #6e6e78;
+  --text-disabled: #4a4a52;
+
+  --accent: #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-bg: rgba(34, 211, 238, 0.14);
+  --accent-ring: rgba(34, 211, 238, 0.45);
+
+  --status-success: #32d74b;
+  --status-warning: #ffd60a;
+  --status-danger: #ff453a;
+  --status-info: #0a84ff;
+
+  --height-title-bar: 28px;
+  --height-menu-bar: 24px;
+  --height-dock: 64px;
+  --size-dock-icon: 48px;
+  --size-dock-icon-magnified: 64px;
+  --radius-window: 10px;
+  --radius-card: 8px;
+  --traffic-light-size: 12px;
+  --traffic-light-gap: 8px;
+
+  /* Widget material — desktop-pinned widgets are floating glass, a different
+     surface class from in-window panels (UI-SPEC-17 / APPEND_WIDGETS_VISUAL). */
+  --widget-bg: rgba(26, 26, 31, 0.55);
+  --widget-border: rgba(255, 255, 255, 0.09);
+  --widget-radius: 22px;
+  --widget-blur: 26px;
+  --widget-shadow: 0 24px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  /* Weather semantic colors — information color for iconography only. */
+  --weather-sun: #fbbf24;
+  --weather-rain: #38bdf8;
+  --weather-cloud: #94a3b8;
+
+  /* Ecosystem brand dots (Projects widget lockfile indicators). */
+  --brand-npm: #cb3837;
+  --brand-yarn: #2c8ebb;
+  --brand-pnpm: #f9ad00;
+}
+
+@theme {
+  --color-bg-base: #121212;
+  --color-bg-surface: #1a1a1e;
+  --color-bg-elevated: #232328;
+  --color-bg-overlay: #2c2c32;
+  --color-bg-hover: #34343b;
+
+  --color-text-primary: #f2f2f5;
+  --color-text-secondary: #a8a8b3;
+  --color-text-tertiary: #6e6e78;
+  --color-text-disabled: #4a4a52;
+
+  --color-accent: #22d3ee;
+  --color-accent-strong: #67e8f9;
+  --color-accent-bg: rgba(34, 211, 238, 0.14);
+  --color-accent-ring: rgba(34, 211, 238, 0.45);
+
+  --color-status-success: #32d74b;
+  --color-status-warning: #ffd60a;
+  --color-status-danger: #ff453a;
+  --color-status-info: #0a84ff;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-window: 10px;
+  --radius-card: 8px;
+  --radius-widget: 22px;
+
+  --color-widget-bg: rgba(26, 26, 31, 0.55);
+  --color-widget-border: rgba(255, 255, 255, 0.09);
+
+  --color-weather-sun: #fbbf24;
+  --color-weather-rain: #38bdf8;
+  --color-weather-cloud: #94a3b8;
+
+  --color-brand-npm: #cb3837;
+  --color-brand-yarn: #2c8ebb;
+  --color-brand-pnpm: #f9ad00;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+/* Text-entry surfaces get a quiet 1px ring — the 2px + halo signature ring is
+   for buttons and selectable rows, it reads too loud wrapping a text caret. */
+input:focus-visible,
+textarea:focus-visible,
+[contenteditable="true"]:focus-visible {
+  outline: 1px solid var(--accent-ring);
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+/* Chrome-less search fields (Spotlight): the panel itself is the affordance,
+   the caret is the focus indicator — nothing wraps the input. */
+.input-bare:focus,
+.input-bare:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Monaco draws its own caret; the global ring on its internals just doubles it. */
+.monaco-editor :focus-visible,
+.monaco-editor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* ---- Widget material (desktop-pinned widgets, UI-SPEC-17) ----
+   Floating glass sitting above the wallpaper: translucent fill, a sheen
+   highlight layered over it, a 1px light border, 26px backdrop blur, and a
+   deep drop shadow that lifts the card off the desktop. Distinct from the
+   flat --bg-elevated panels used inside windows. */
+.widget-glass {
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: var(--widget-radius);
+  box-shadow: var(--widget-shadow);
+  -webkit-backdrop-filter: blur(var(--widget-blur)) saturate(150%);
+  backdrop-filter: blur(var(--widget-blur)) saturate(150%);
+  overflow: hidden;
+}
+
+.widget-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.01) 45%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.xterm .xterm-viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Markdown body (shared by Reader and Finder Quick Look) ---- */
+.markdown-body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  word-wrap: break-word;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.3em 0 0.5em;
+  scroll-margin-top: 16px;
+}
+
+.markdown-body h1 { font-size: 1.55em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.1em; }
+.markdown-body h4 { font-size: 1em; }
+
+.markdown-body p {
+  margin: 0.6em 0;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body a:hover {
+  color: var(--accent-strong);
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-body li {
+  margin: 0.2em 0;
+}
+
+.markdown-body li.task-list-item {
+  list-style: none;
+  margin-left: -1.5em;
+}
+
+.markdown-body .task-list-item input[type="checkbox"] {
+  margin-right: 0.45em;
+  accent-color: var(--accent);
+}
+
+.markdown-body blockquote {
+  border-left: 2px solid var(--accent);
+  color: var(--text-secondary);
+  margin: 0.8em 0;
+  padding-left: 1em;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--bg-hover);
+  margin: 1.4em 0;
+}
+
+.markdown-body img {
+  border-radius: var(--radius-card);
+  max-width: 100%;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+  margin: 0.8em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+  width: max-content;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--bg-hover);
+  padding: 0.35em 0.7em;
+  text-align: left;
+}
+
+.markdown-body th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.markdown-body tr:nth-child(even) td {
+  background: var(--bg-elevated);
+}
+
+.markdown-body del {
+  color: var(--text-tertiary);
+}
+
+.markdown-body code {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+}
+
+.markdown-body pre {
+  background: var(--bg-base);
+  border: 1px solid var(--bg-hover);
+  border-radius: var(--radius-card);
+  margin: 0.9em 0;
+  overflow-x: auto;
+  padding: 0.9em 1em;
+  position: relative;
+}
+
+.markdown-body pre code {
+  background: none;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 0;
+}
+
+/* Per-block copy button, revealed on hover (UI-SPEC-16 §3). */
+.markdown-body .md-copy {
+  align-items: center;
+  background: var(--bg-overlay);
+  border: 1px solid var(--bg-hover);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  height: 22px;
+  justify-content: center;
+  opacity: 0;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+  width: 22px;
+}
+
+.markdown-body pre:hover .md-copy {
+  opacity: 1;
+}
+
+.markdown-body .md-copy:hover {
+  color: var(--text-primary);
+}
+
+.markdown-body .md-copy.md-copied {
+  color: var(--status-success);
+}
+
+/* Compact variant: Finder's Quick Look preview. */
+.markdown-body.markdown-compact {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.markdown-body.markdown-compact h1,
+.markdown-body.markdown-compact h2,
+.markdown-body.markdown-compact h3,
+.markdown-body.markdown-compact h4 {
+  margin: 0.8em 0 0.4em;
+}
+
+.markdown-body.markdown-compact h1 { font-size: 1.3em; }
+.markdown-body.markdown-compact h2 { font-size: 1.15em; }
+.markdown-body.markdown-compact h3 { font-size: 1.05em; }
+
+/* Prism token colors — drawn from the existing DESIGN.md palette only. */
+.markdown-body .token.comment,
+.markdown-body .token.prolog,
+.markdown-body .token.doctype,
+.markdown-body .token.cdata {
+  color: var(--text-tertiary);
+}
+
+.markdown-body .token.punctuation {
+  color: var(--text-secondary);
+}
+
+.markdown-body .token.keyword,
+.markdown-body .token.boolean,
+.markdown-body .token.operator,
+.markdown-body .token.constant {
+  color: var(--accent);
+}
+
+.markdown-body .token.string,
+.markdown-body .token.attr-value,
+.markdown-body .token.char,
+.markdown-body .token.regex {
+  color: var(--status-success);
+}
+
+.markdown-body .token.number {
+  color: var(--status-warning);
+}
+
+.markdown-body .token.function,
+.markdown-body .token.builtin {
+  color: var(--status-info);
+}
+
+.markdown-body .token.class-name,
+.markdown-body .token.property,
+.markdown-body .token.attr-name,
+.markdown-body .token.selector {
+  color: var(--accent-strong);
+}
+
+.markdown-body .token.variable,
+.markdown-body .token.parameter {
+  color: var(--text-primary);
+}

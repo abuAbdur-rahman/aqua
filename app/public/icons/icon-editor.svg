@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img">
+<title>Aqua — Editor icon</title>
+<defs>
+  <clipPath id="clipEd"><rect x="16" y="16" width="480" height="480" rx="108"/></clipPath>
+  <filter id="tileShadowEd" x="-50%" y="-50%" width="200%" height="200%">
+    <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.45"/>
+  </filter>
+  <filter id="glyphShadowEd" x="-50%" y="-50%" width="200%" height="200%">
+    <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#083344" flood-opacity="0.5"/>
+  </filter>
+  <linearGradient id="tileEd" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#242A30"/>
+    <stop offset="100%" stop-color="#15181C"/>
+  </linearGradient>
+  <linearGradient id="glyphGradEd" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#67E8F9"/>
+    <stop offset="100%" stop-color="#22D3EE"/>
+  </linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+
+<rect x="16" y="16" width="480" height="480" rx="108" fill="url(#tileEd)" filter="url(#tileShadowEd)"/>
+<rect x="16" y="16" width="480" height="240" rx="108" fill="url(#gloss)" clip-path="url(#clipEd)"/>
+
+<g filter="url(#glyphShadowEd)">
+  <polyline points="204,180 136,256 204,332" fill="none" stroke="url(#glyphGradEd)" stroke-width="32"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="240" y1="340" x2="288" y2="172" stroke="url(#glyphGradEd)" stroke-width="28" stroke-linecap="round"/>
+  <polyline points="308,180 376,256 308,332" fill="none" stroke="url(#glyphGradEd)" stroke-width="32"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>

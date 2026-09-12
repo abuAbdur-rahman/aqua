@@ -1,0 +1,15 @@
+[Unit]
+Description=Aqua daemon (WSL backend)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/aqua-daemon
+Restart=on-failure
+RestartSec=2
+# The daemon uses HOME as its filesystem root and resolves the elevation helper
+# relative to its own executable, so no extra env is required.
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target

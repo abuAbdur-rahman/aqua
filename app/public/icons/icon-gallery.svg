@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#0E7490"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="26" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="cardShadow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#083344" flood-opacity="0.35"/>
+    </filter>
+    <clipPath id="cardClip">
+      <rect x="-150" y="-150" width="300" height="300" rx="40"/>
+    </clipPath>
+  </defs>
+
+  <!-- tile -->
+  <rect x="40" y="40" width="432" height="432" rx="96" fill="url(#bgGrad)" filter="url(#tileShadow)"/>
+
+  <!-- back photo card -->
+  <g transform="translate(224,230) rotate(-12)">
+    <rect x="-140" y="-140" width="280" height="280" rx="36" fill="#CFFAFE" opacity="0.85"/>
+  </g>
+
+  <!-- front photo card -->
+  <g transform="translate(292,294) rotate(7)">
+    <rect x="-150" y="-150" width="300" height="300" rx="40" fill="#F8FEFF" filter="url(#cardShadow)"/>
+    <g clip-path="url(#cardClip)">
+      <circle cx="64" cy="-92" r="32" fill="#22D3EE"/>
+      <polygon points="-160,120 -50,-6 20,64 96,-46 170,120" fill="#0E7490"/>
+      <polygon points="-160,120 10,10 60,60 96,-46 170,120" fill="#155E75" opacity="0.9"/>
+    </g>
+  </g>
+</svg>
