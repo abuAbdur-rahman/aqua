@@ -66,7 +66,7 @@ jobs:
           projectPath: app
           tagName: ${{ github.ref_name }}
           releaseName: "Aqua ${{ github.ref_name }}"
-          releaseBody: "Installers: download the NSIS EXE (recommended) or the MSI. The NSIS build also carries the in-app updater signature. The WSL daemon tarball is attached below (see daemon/deploy/README.md)."
+          releaseBody: "**App (Windows):** download the NSIS EXE (recommended) or the MSI. The NSIS build also carries the in-app updater signature.\n\n**Daemon (WSL):** `aqua-daemon-<tag>-linux-x86_64-musl.tar.gz` (+ `.sha256`) — static musl binary; install with `daemon/deploy/install-from-release.sh` (see `daemon/deploy/README.md`).\n\n**Source code (zip / tar.gz):** auto-generated full-monorepo snapshots (app + daemon) for the tag — not installers."
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
@@ -141,5 +141,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" aqua-daemon-*.tar.gz aqua-daemon-*.tar.gz.sha256
-          gh release edit "$TAG" --draft=false --latest
+          gh release upload "$TAG" aqua-daemon-*.tar.gz aqua-daemon-*.tar.gz.sha256 --repo "${GITHUB_REPOSITORY}"
+          gh release edit "$TAG" --draft=false --latest --repo "${GITHUB_REPOSITORY}"
