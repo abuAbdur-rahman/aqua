@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img">
+<title>Aqua — finder icon</title>
+<defs>
+  <linearGradient id="g-finder" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#0B6E86"/>
+    <stop offset="100%" stop-color="#22D3EE"/>
+  </linearGradient>
+  <linearGradient id="gloss-finder" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.16"/>
+    <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    <stop offset="100%" stop-color="#000000" stop-opacity="0.10"/>
+  </linearGradient>
+  <filter id="shadow-finder" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.38"/>
+  </filter>
+</defs>
+
+<g filter="url(#shadow-finder)">
+  <rect x="26" y="26" width="460" height="460" rx="100" fill="url(#g-finder)"/>
+  <rect x="26" y="26" width="460" height="460" rx="100" fill="url(#gloss-finder)"/>
+  <rect x="26.5" y="26.5" width="459" height="459" rx="99.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+</g>
+
+<g>
+  <rect x="126" y="168" width="110" height="40" rx="10" fill="#FFFFFF"/>
+  <rect x="106" y="196" width="300" height="172" rx="22" fill="#FFFFFF"/>
+  <path d="M126 224 L392 224 L378 352 Q376 368 360 368 L146 368 Q130 368 128 352 Z"
+        fill="#E4F7FC" fill-opacity="0.9"/>
+  <path d="M138 232 L380 232" stroke="#FFFFFF" stroke-width="3" stroke-opacity="0.5" stroke-linecap="round"/>
+</g>
+</svg>

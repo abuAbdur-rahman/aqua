@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img">
+<title>Aqua — Trash icon</title>
+<defs>
+  <clipPath id="clipTr"><rect x="16" y="16" width="480" height="480" rx="108"/></clipPath>
+  <filter id="tileShadowTr" x="-50%" y="-50%" width="200%" height="200%">
+    <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.45"/>
+  </filter>
+  <filter id="glyphShadowTr" x="-50%" y="-50%" width="200%" height="200%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.45"/>
+  </filter>
+  <linearGradient id="tileTr" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#2E2E36"/>
+    <stop offset="100%" stop-color="#1B1B20"/>
+  </linearGradient>
+  <linearGradient id="metalTr" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#D4D4DC"/>
+    <stop offset="100%" stop-color="#9C9CA8"/>
+  </linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+
+<rect x="16" y="16" width="480" height="480" rx="108" fill="url(#tileTr)" filter="url(#tileShadowTr)"/>
+<rect x="16" y="16" width="480" height="240" rx="108" fill="url(#gloss)" clip-path="url(#clipTr)"/>
+
+<g filter="url(#glyphShadowTr)">
+  <rect x="212" y="116" width="88" height="36" rx="18" fill="url(#metalTr)"/>
+  <rect x="132" y="160" width="248" height="36" rx="18" fill="url(#metalTr)"/>
+  <path d="M160 208 L184 392 Q188 412 208 412 L304 412 Q324 412 328 392 L352 208 Z" fill="url(#metalTr)"/>
+</g>
+<rect x="212" y="232" width="18" height="152" rx="9" fill="#1B1B20" fill-opacity="0.55"/>
+<rect x="248" y="232" width="18" height="152" rx="9" fill="#1B1B20" fill-opacity="0.55"/>
+<rect x="284" y="232" width="18" height="152" rx="9" fill="#1B1B20" fill-opacity="0.55"/>
+</svg>
