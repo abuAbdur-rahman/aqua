@@ -141,6 +141,15 @@ function spaceEntries(onMissionControl: () => void): CommandEntry[] {
       enabled: true,
       run: onMissionControl,
     },
+    {
+      id: "space.control-tab",
+      label: "Switch App (Control-Tab)",
+      category: "space",
+      shortcutHint: "Ctrl+Shift+Tab",
+      keywords: ["switch", "app", "control tab"],
+      enabled: true,
+      run: () => window.dispatchEvent(new CustomEvent("aqua:open-control-tab")),
+    },
   ];
 }
 

@@ -277,7 +277,7 @@ export function WindowFrame({ win, containerRef, spaceVisible = true }: Props) {
           </Suspense>
         )}
         {win.appId === "activity" && <ActivityPane />}
-        {win.appId === "editor" && <EditorPane />}
+        {win.appId === "editor" && <EditorPane winId={win.id} />}
         {win.appId === "settings" && (
           <Suspense
             fallback={

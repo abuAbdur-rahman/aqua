@@ -8,6 +8,8 @@ import { useWindowStore } from "../windows/store";
 import { useLayoutPersistence } from "../lib/useLayoutPersistence";
 import { SpotlightPane } from "../panes/SpotlightPane";
 import { CommandCenter } from "./CommandCenter";
+import { ControlTabOverlay } from "./ControlTabOverlay";
+import { useZoomStore, zoomAppForWindow } from "../lib/zoom";
 import { ModalHost } from "../system/ModalHost";
 import { ToastHost } from "../system/toast";
 import { Wallpaper } from "./Wallpaper";
@@ -25,6 +27,7 @@ export function Desktop() {
   const openApp = useWindowStore((store) => store.openApp);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
+  const [controlTabOpen, setControlTabOpen] = useState(false);
   const [missionControlOpen, setMissionControlOpen] = useState(false);
   const [widgetCatalogOpen, setWidgetCatalogOpen] = useState(false);
   const editMode = useWidgetStore((s) => s.editMode);
@@ -77,6 +80,9 @@ export function Desktop() {
           unlisten = fn;
         })
         .catch(() => {});
+      void import("@tauri-apps/api/event")
+        .then(({ listen }) => listen("control-tab-toggle", () => setControlTabOpen(true)))
+        .catch(() => {});
     }
 
     const onKey = (e: KeyboardEvent) => {
@@ -86,6 +92,10 @@ export function Desktop() {
         if (now - lastToggleRef.current < 300) return;
         lastToggleRef.current = now;
         setSpotlightOpen((v) => !v);
+      }
+      if (!inTauri && e.ctrlKey && e.shiftKey && e.code === "Tab") {
+        e.preventDefault();
+        setControlTabOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -98,8 +108,13 @@ export function Desktop() {
 
   useEffect(() => {
     const onOpenSpotlight = () => setSpotlightOpen(true);
+    const onOpenControlTab = () => setControlTabOpen(true);
     window.addEventListener("aqua:open-spotlight", onOpenSpotlight);
-    return () => window.removeEventListener("aqua:open-spotlight", onOpenSpotlight);
+    window.addEventListener("aqua:open-control-tab", onOpenControlTab);
+    return () => {
+      window.removeEventListener("aqua:open-spotlight", onOpenSpotlight);
+      window.removeEventListener("aqua:open-control-tab", onOpenControlTab);
+    };
   }, []);
 
   useEffect(() => {
@@ -146,6 +161,27 @@ export function Desktop() {
     window.addEventListener("contextmenu", onContextMenu);
     return () => window.removeEventListener("contextmenu", onContextMenu);
   }, [setEditMode]);
+
+  useEffect(() => {
+    const onZoomKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      if (e.key !== "+" && e.key !== "=" && e.key !== "-" && e.key !== "_") return;
+      const target = e.target as HTMLElement | null;
+      if (target != null && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      const st = useWindowStore.getState();
+      const focused = st.windows.find((w) => w.id === st.focusedId);
+      if (!focused) return;
+      const app = zoomAppForWindow(focused.appId);
+      if (!app) return;
+      e.preventDefault();
+      if (e.key === "+" || e.key === "=") useZoomStore.getState().zoomIn(app);
+      else useZoomStore.getState().zoomOut(app);
+    };
+    window.addEventListener("keydown", onZoomKey);
+    return () => window.removeEventListener("keydown", onZoomKey);
+  }, []);
 
   useEffect(() => {
     const onSpaceKey = (e: KeyboardEvent) => {
@@ -236,6 +272,8 @@ export function Desktop() {
       />
 
       <MissionControl open={missionControlOpen} onClose={() => setMissionControlOpen(false)} />
+
+      <ControlTabOverlay open={controlTabOpen} onClose={() => setControlTabOpen(false)} />
 
       <ModalHost />
       <ToastHost />

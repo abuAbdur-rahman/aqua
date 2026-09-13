@@ -40,6 +40,7 @@ export interface MonacoEditorProps {
   language: string;
   path: string;
   readOnly: boolean;
+  fontSize?: number;
   onChange: (value: string) => void;
   onCursor?: (line: number, column: number) => void;
   onSave?: () => void;
@@ -50,6 +51,7 @@ export default function MonacoEditor({
   language,
   path,
   readOnly,
+  fontSize = 13,
   onChange,
   onCursor,
   onSave,
@@ -75,7 +77,7 @@ export default function MonacoEditor({
       onMount={handleMount}
       options={{
         readOnly,
-        fontSize: 13,
+        fontSize,
         fontFamily: "JetBrains Mono, ui-monospace, monospace",
         minimap: { enabled: false },
         scrollBeyondLastLine: false,

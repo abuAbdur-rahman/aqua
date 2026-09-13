@@ -285,6 +285,41 @@ interface SpaceState {
 
 `PUT` request body = `LayoutState`. Response = `{ success: true }`.
 
+## WSL configuration (wsl.conf) — proposal for daemon dev
+
+`/etc/wsl.conf` sits outside Finder's allowed-roots and needs root to write, so it gets its own narrow endpoint pair rather than riding the generic `fs/read`/`fs/write` — keeps those endpoints strictly user-space, no elevation path through them ever.
+
+`GET /api/config/wsl-conf`
+
+```ts
+interface WslConfResponse {
+  systemd: boolean;
+  appendWindowsPath: boolean;
+  automountEnabled: boolean;
+  generateHosts: boolean;
+  raw: string; // full current file content, read-only "view raw" affordance
+}
+```
+
+`PUT /api/config/wsl-conf` — full known-key set every time, not a partial patch:
+
+```ts
+interface WslConfWriteRequest {
+  systemd: boolean;
+  appendWindowsPath: boolean;
+  automountEnabled: boolean;
+  generateHosts: boolean;
+}
+
+type WslConfWriteResponse =
+  | { success: true }
+  | { success: false; error: string };
+```
+
+Only these four keys are ever touched. Every other line in the file — comments, keys this UI doesn't expose yet, anything hand-edited — is preserved byte-for-byte via a format-preserving parse (`ini-roundtrip` crate on the daemon side), never a naive parse-mutate-serialize. Read is unprivileged (file is world-readable); write is elevated — see `ELEVATION_RECOMMENDATION.md`. A successful write only takes effect on next WSL start; `success: true` does not imply a live reload, and Settings UI copy says so.
+
+Daemon tasks: add `config/wsl_conf.rs` module, wire both routes, write path goes through `aqua-daemon-helper` hardcoded to `/etc/wsl.conf` (never caller-supplied path, never direct `sudo` shell-out).
+
 ## System & Wallpaper
 
 ### Shutdown

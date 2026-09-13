@@ -51,11 +51,13 @@ interface WindowState {
   moveWindowToSpace: (winId: string, spaceId: number) => void;
   hydrate: (payload: HydratePayload) => void;
   editorPathRequest: string | null;
+  editorFolderByWindow: Record<string, string>;
   finderPathRequest: string | null;
   terminalPathRequest: string | null;
   galleryPathRequest: string | null;
   readerPathRequest: string | null;
   openEditor: (path: string) => void;
+  openEditorFolder: (path: string) => void;
   openFinder: (path: string) => void;
   openTerminal: (path: string) => void;
   openGallery: (path: string) => void;
@@ -79,6 +81,7 @@ export const useWindowStore = create<WindowState>((set, get) => ({
   nextZ: 10,
   focusedId: null,
   editorPathRequest: null,
+  editorFolderByWindow: {},
   finderPathRequest: null,
   terminalPathRequest: null,
   galleryPathRequest: null,
@@ -138,6 +141,37 @@ export const useWindowStore = create<WindowState>((set, get) => ({
     get().openApp("editor");
   },
 
+  // Folders open in their own Editor window (SPEC-20: one folder per window),
+  // never merged into an already-open Editor — unlike files, which reuse it.
+  openEditorFolder: (path) => {
+    const manifest = appManifest.editor;
+    if (!manifest) return;
+    const { windows, nextZ, activeSpaceId } = get();
+    const count = windows.length;
+    const offset = 28 * (count % 6);
+    const win: WindowRecord = {
+      id: nextId(),
+      appId: "editor",
+      title: manifest.name,
+      x: 80 + offset,
+      y: 40 + offset,
+      w: manifest.defaultSize.w,
+      h: manifest.defaultSize.h,
+      z: nextZ,
+      minimized: false,
+      focused: true,
+      prevBounds: null,
+      maximized: false,
+      spaceId: activeSpaceId,
+    };
+    set({
+      windows: [...windows.map((w) => ({ ...w, focused: false })), win],
+      nextZ: nextZ + 1,
+      focusedId: win.id,
+      editorFolderByWindow: { ...get().editorFolderByWindow, [win.id]: path },
+    });
+  },
+
   openFinder: (path) => {
     set({ finderPathRequest: path });
     get().openApp("finder");
@@ -172,9 +206,12 @@ export const useWindowStore = create<WindowState>((set, get) => ({
       const visible = remaining.filter((w) => w.spaceId === s.activeSpaceId);
       const pool = visible.length ? visible : remaining;
       const nextFocus = pool.length ? pool.reduce((a, b) => (a.z > b.z ? a : b)).id : null;
+      const editorFolderByWindow = { ...s.editorFolderByWindow };
+      delete editorFolderByWindow[id];
       return {
         windows: remaining.map((w) => ({ ...w, focused: w.id === nextFocus })),
         focusedId: nextFocus,
+        editorFolderByWindow,
       };
     }),
 

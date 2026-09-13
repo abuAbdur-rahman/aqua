@@ -178,6 +178,7 @@ export function FinderPane() {
   const menuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const openEditor = useWindowStore((state) => state.openEditor);
+  const openEditorFolder = useWindowStore((state) => state.openEditorFolder);
   const openTerminal = useWindowStore((state) => state.openApp);
   const openGallery = useWindowStore((state) => state.openGallery);
   const openReader = useWindowStore((state) => state.openReader);
@@ -704,6 +705,7 @@ export function FinderPane() {
           </>}
           {menu.entry?.kind === "dir" && <>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { setPath(menu.entry?.path ?? path); setMenu(null); }}><FiFolder aria-hidden="true" /> Open folder</button>
+            <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openEditorFolder(menu.entry?.path ?? path); setMenu(null); }}><FiEdit3 aria-hidden="true" /> Open in Editor</button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { openGallery(menu.entry?.path ?? path); setMenu(null); }}><FiImage aria-hidden="true" /> Open in Gallery</button>
             <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-primary hover:bg-bg-hover" onClick={() => { pinSelected(); setMenu(null); }}><FiBookmark aria-hidden="true" /> Add to Sidebar</button>
           </>}

@@ -53,8 +53,8 @@ export const appManifest: Record<string, AppManifestEntry> = {
     id: "settings",
     name: "Settings",
     icon: "/icons/icon-settings.svg",
-    defaultSize: { w: 720, h: 480 },
-    minSize: { w: 560, h: 380 },
+    defaultSize: { w: 640, h: 480 },
+    minSize: { w: 560, h: 400 },
   },
   trash: {
     id: "trash",

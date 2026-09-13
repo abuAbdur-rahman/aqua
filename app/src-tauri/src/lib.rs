@@ -278,6 +278,23 @@ async fn restart_wsl_distro(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn set_sparse() -> Result<(), String> {
+    let distro = discover_default_distro().await.map_err(|e| e.to_string())?;
+    let output = wsl_command()
+        .args(["--manage", &distro, "--set-sparse", "true"])
+        .output()
+        .map_err(|e| format!("WSL not available: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "wsl --manage {} --set-sparse true failed: {}",
+            distro,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct PickedImage {
     name: String,
@@ -571,7 +588,8 @@ pub fn run() {
             import_from_windows,
             copy_move_entry,
             pick_windows_files,
-            restart_wsl_distro
+            restart_wsl_distro,
+            set_sparse
         ])
         .setup(|app| {
             use std::time::{Duration, Instant};
@@ -594,6 +612,18 @@ pub fn run() {
                         drop(last);
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.emit("spotlight-toggle", ());
+                        }
+                    }
+                },
+            ) {
+                eprintln!("Global shortcut unavailable: {}", e);
+            }
+            if let Err(e) = app.global_shortcut().on_shortcut(
+                "Ctrl+Shift+Tab",
+                move |app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit("control-tab-toggle", ());
                         }
                     }
                 },

@@ -33,6 +33,9 @@ Run the frontend and Tauri checks defined by the actual package manifests after 
 - `restart_wsl_distro` (the one distro-scoped power action Aqua does own) always resolves the distro name via `wsl -l -v` first, same as the daemon service lifecycle path — never hardcode `-d Ubuntu`.
 - `restart_wsl_distro` is only reachable from Settings → Daemon pane, never the System Menu. It's a heavier action than the other three power commands (it affects every process in that WSL instance, not just Aqua's daemon) and shouldn't be one accidental click away from where people quit apps.
 - `restart_wsl_distro` always routes through the existing Confirmation/Elevation modal before firing. Copy must name the actual distro (from `wsl -l -v`, not a hardcoded string) and state plainly that this affects everything running in it, not just Aqua.
+- `Ctrl+Shift` is Aqua's reserved OS-level prefix — every global (`tauri-plugin-global-shortcut`) hotkey lives under it: Control-Tab = `Ctrl+Shift+Tab`, Command Center = `Ctrl+Shift+/`, Spotlight = `Ctrl+Shift+Space`. Never register a bare `Ctrl+Shift+<key>` as a local, in-app binding. Local per-app bindings (e.g. Terminal/Editor tab-cycling on bare `Ctrl+Tab`) must never collide with anything under this prefix.
+- WSL lifecycle actions (`restart_wsl_distro`, Auto-Shrink) always name the real distro from `wsl -l -v` in their confirmation modal — never a hardcoded name, same rule as the daemon spawn command above.
+- Editor's file-tree sidebar lazy-loads one directory level per expand via `GET /api/fs/list` — never a recursive walk client-side. Known-heavy directories (`node_modules`, `target`, `.git`, `dist`, `build`) render collapsed by default and require an explicit click to expand; never auto-expanded or auto-scanned, but never hidden outright either.
 
 ## Local implementation notes (app agent)
 

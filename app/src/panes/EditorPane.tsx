@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react"
 import { FiFile, FiFolder, FiPlus, FiSave, FiX } from "react-icons/fi";
 import { createFile, readFile, writeFile } from "../lib/filesystem";
 import { editorFileState, languageForFile } from "../lib/editorFiles";
+import { useZoomStore } from "../lib/zoom";
+import { EditorFileTree } from "./EditorFileTree";
 import { useModalStore } from "../system/modalStore";
 import { toast } from "../system/toast";
 import { useWindowStore } from "../windows/store";
@@ -25,7 +27,7 @@ type EditorTab = {
   saveState: SaveState;
 };
 
-type Props = { initialPath?: string };
+type Props = { initialPath?: string; winId?: string };
 
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -52,7 +54,7 @@ function EditorLoading() {
   </div>;
 }
 
-export function EditorPane({ initialPath }: Props) {
+export function EditorPane({ initialPath, winId }: Props) {
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
     const request = useWindowStore.getState().editorPathRequest;
     return [newTab(request && request.trim() ? request : initialPath, "initial")];
@@ -65,6 +67,15 @@ export function EditorPane({ initialPath }: Props) {
   const requestConfirm = useModalStore((s) => s.requestConfirm);
   const requestFilePicker = useModalStore((s) => s.requestFilePicker);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [folderRoot, setFolderRoot] = useState<string | null>(null);
+  const editorScale = useZoomStore((s) => s.scales.editor);
+  const storeFolder = useWindowStore((s) => (winId ? s.editorFolderByWindow[winId] ?? null : null));
+
+  // A folder opened via Finder / Open Folder lands in its own window's slot —
+  // this pane adopts it once, then owns it locally (winId-keyed, no stealing).
+  useEffect(() => {
+    if (storeFolder && !folderRoot) setFolderRoot(storeFolder);
+  }, [storeFolder, folderRoot]);
 
   const updateTab = useCallback((id: string, update: Partial<EditorTab>) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...update } : tab));
@@ -168,6 +179,32 @@ export function EditorPane({ initialPath }: Props) {
     });
   };
 
+  const openFolder = () => {
+    requestFilePicker({
+      mode: "selectFolder",
+      title: "Open Folder",
+      submitLabel: "Open Folder",
+      onSubmit: (path) => {
+        setFolderRoot(path);
+        if (winId) {
+          const map = useWindowStore.getState().editorFolderByWindow;
+          useWindowStore.setState({ editorFolderByWindow: { ...map, [winId]: path } });
+        }
+      },
+    });
+  };
+
+  const openFileFromTree = useCallback((path: string) => {
+    const existing = tabs.find((tab) => tab.path === path);
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    const tab = newTab(path);
+    setTabs((current) => [...current, tab]);
+    setActiveId(tab.id);
+  }, [tabs]);
+
   const closeTab = (id: string) => {
     const tab = tabs.find((item) => item.id === id);
     if (!tab) return;
@@ -211,14 +248,21 @@ export function EditorPane({ initialPath }: Props) {
       </div>)}
       <button onClick={() => { const tab = newTab(); setTabs((current) => [...current, tab]); setActiveId(tab.id); }} aria-label="New file" className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover"><FiPlus aria-hidden="true" /></button>
       <div className="ml-auto flex shrink-0 gap-1">
-        <button onClick={openFile} aria-label="Open file" className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover"><FiFolder aria-hidden="true" /></button>
+        <button onClick={openFile} aria-label="Open file" className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover"><FiFile aria-hidden="true" /></button>
+        <button onClick={openFolder} aria-label="Open folder" className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover"><FiFolder aria-hidden="true" /></button>
          <button onClick={() => void beginSave()} aria-label="Save file" disabled={!active.dirty || readOnly} className="rounded p-1.5 text-text-tertiary hover:bg-bg-hover disabled:opacity-40"><FiSave aria-hidden="true" /></button>
       </div>
     </div>
 
+     <div className="flex min-h-0 flex-1">
+      {folderRoot && <EditorFileTree root={folderRoot} onOpenFile={openFileFromTree} />}
+
      {editorFileState(active.path) === "uneditable" && active.path !== "untitled" && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is uneditable. Editing and saving are disabled.</div>}
      {active.truncated && <div className="shrink-0 border-b border-status-warning bg-status-warning/10 px-3 py-1.5 text-[11px] text-text-secondary">This file is large — showing the first portion. Editing and saving are disabled.</div>}
-     {active.state === "binary" ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"><p className="text-sm text-text-primary">This file can&apos;t be edited here</p><button onClick={openFile} className="text-xs text-accent">Open another file</button></div> : active.state === "error-read" ? <div className="m-3 rounded-card border-l-2 border-status-danger bg-status-danger/10 p-3"><p className="text-xs font-medium text-text-primary">This file no longer exists</p><p className="mt-1 text-[11px] text-text-tertiary">{active.error}</p><div className="mt-2 flex gap-3"><button onClick={() => closeTab(active.id)} className="text-xs text-text-tertiary">Close tab</button><button onClick={() => updateTab(active.id, { state: "ready", error: null })} className="text-xs text-accent">Save as new file</button></div></div> : active.state === "loading" ? <EditorLoading /> : <div className="relative min-h-0 flex-1"><Suspense fallback={<div role="status" className="flex h-full items-center justify-center text-xs text-text-tertiary">Loading editor…</div>}><MonacoEditor value={active.content} language={language} path={active.id} readOnly={readOnly} onChange={(v) => updateTab(active.id, { content: v, dirty: true, saveState: "saved" })} onCursor={(line, column) => setCursor({ line, column })} onSave={() => saveRef.current()} /></Suspense></div>}
+     <div className="flex min-h-0 flex-1 flex-col">
+      {active.state === "binary" ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center"><p className="text-sm text-text-primary">This file can&apos;t be edited here</p><button onClick={openFile} className="text-xs text-accent">Open another file</button></div> : active.state === "error-read" ? <div className="m-3 rounded-card border-l-2 border-status-danger bg-status-danger/10 p-3"><p className="text-xs font-medium text-text-primary">This file no longer exists</p><p className="mt-1 text-[11px] text-text-tertiary">{active.error}</p><div className="mt-2 flex gap-3"><button onClick={() => closeTab(active.id)} className="text-xs text-text-tertiary">Close tab</button><button onClick={() => updateTab(active.id, { state: "ready", error: null })} className="text-xs text-accent">Save as new file</button></div></div> : active.state === "loading" ? <EditorLoading /> : <div className="relative min-h-0 flex-1"><Suspense fallback={<div role="status" className="flex h-full items-center justify-center text-xs text-text-tertiary">Loading editor…</div>}><MonacoEditor value={active.content} language={language} path={active.id} readOnly={readOnly} fontSize={Math.round(13 * editorScale)} onChange={(v) => updateTab(active.id, { content: v, dirty: true, saveState: "saved" })} onCursor={(line, column) => setCursor({ line, column })} onSave={() => saveRef.current()} /></Suspense></div>}
+      </div>
+     </div>
       <div className="flex h-6 shrink-0 items-center justify-between border-t border-bg-hover bg-bg-elevated px-3 text-[11px] text-text-tertiary"><span className="truncate">{active.name} <span className="mx-1">UTF-8</span> <span className="mx-1">{language}</span> <span className="mx-1">Ln {cursor.line}, Col {cursor.column}</span></span><span title={saveError ?? undefined} className={active.saveState === "error" ? "text-status-danger" : ""}>{active.saveState === "saving" ? "Saving..." : active.saveState === "error" ? (saveError ?? "Couldn't save") : "Saved"}</span></div>
    </div>;
 }

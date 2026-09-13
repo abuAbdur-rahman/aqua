@@ -107,3 +107,52 @@ export async function uploadWallpaper(file: Blob, label: string): Promise<Custom
 export async function deleteWallpaper(id: string): Promise<void> {
   await fetchJson(`/api/wallpaper/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+export interface WslConfState {
+  systemd: boolean;
+  appendWindowsPath: boolean;
+  automountEnabled: boolean;
+  generateHosts: boolean;
+  raw: string;
+}
+
+export interface WslConfWrite {
+  systemd: boolean;
+  appendWindowsPath: boolean;
+  automountEnabled: boolean;
+  generateHosts: boolean;
+}
+
+function isWslConfResponse(value: unknown): value is WslConfState {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.systemd === "boolean" &&
+    typeof v.appendWindowsPath === "boolean" &&
+    typeof v.automountEnabled === "boolean" &&
+    typeof v.generateHosts === "boolean" &&
+    typeof v.raw === "string"
+  );
+}
+
+export async function getWslConf(): Promise<WslConfState> {
+  const payload = await fetchJson<unknown>("/api/config/wsl-conf");
+  if (!isWslConfResponse(payload)) throw new Error("Daemon returned an invalid wsl.conf response");
+  return payload;
+}
+
+export async function putWslConf(body: WslConfWrite): Promise<void> {
+  const res = await fetch(`${DAEMON_BASE}/api/config/wsl-conf`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message =
+      typeof payload === "object" && payload !== null && "error" in payload && typeof (payload as Record<string, unknown>).error === "string"
+        ? String((payload as Record<string, unknown>).error)
+        : `PUT /api/config/wsl-conf failed: ${res.status}`;
+    throw new Error(message);
+  }
+}
